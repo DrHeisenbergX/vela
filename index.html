@@ -644,6 +644,13 @@ button.acc{width:100%;text-align:left;border-radius:12px;transition:background .
 .seg-wide button{white-space:normal;line-height:1.25;min-width:0;text-align:center}
 .seg-wide button .i{flex:none}
 
+.ps-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;flex-wrap:wrap}
+.ps-row label{font-weight:600;font-size:14px}
+.ps-row select.input{width:auto;min-width:190px;max-width:100%;padding-right:34px;appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--text2) 50%),linear-gradient(135deg,var(--text2) 50%,transparent 50%);background-position:calc(100% - 18px) 50%,calc(100% - 13px) 50%;background-size:5px 5px;background-repeat:no-repeat;font-size:16px}
+.ps-info{margin:10px 0 0}
+@media(max-width:560px){.ps-row select.input{width:100%}}
+.kpi-lbl{display:flex;flex-direction:column;line-height:1.2;min-width:0}.kpi-lbl small{font-size:11.5px;opacity:.72;white-space:nowrap;margin-top:2px;font-variant-numeric:tabular-nums}
+
 </style>
 </head>
 <body>
@@ -684,7 +691,7 @@ button.acc{width:100%;text-align:left;border-radius:12px;transition:background .
       <div class="grid" style="margin-bottom:20px">
         <div class="card span-8 chart-card" style="--i:4">
           <div class="card-head">
-            <div><div class="card-title">Cashflow</div><div class="card-sub">Einnahmen und Ausgaben pro Monat</div></div>
+            <div><div class="card-title">Cashflow</div><div class="card-sub" id="cfSub">Einnahmen und Ausgaben pro Monat</div></div>
             <div style="display:flex;gap:16px;align-items:center">
               <div class="legend"><span><i style="background:var(--mint)"></i>Einnahmen</span><span><i style="background:var(--accent)"></i>Ausgaben</span></div>
               <div class="seg-ctl" role="group" aria-label="Zeitraum"><button data-range="6" aria-pressed="true">6 Monate</button><button data-range="12" aria-pressed="false">12 Monate</button></div>
@@ -766,8 +773,9 @@ button.acc{width:100%;text-align:left;border-radius:12px;transition:background .
 (function(){
 "use strict";
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
-const APP_VERSION='3.1.0';const KEY='vela.finance.v2', OLD_KEY='vela.finance.v1', THEME_KEY='vela.theme', SCHEMA=2;
+const APP_VERSION='3.2.0';const KEY='vela.finance.v2', OLD_KEY='vela.finance.v1', THEME_KEY='vela.theme', SCHEMA=2;
 const ICONS={
+  calendar:'<rect x="3" y="4.5" width="18" height="16.5" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/>',
   grid:'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
   list:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
   pie:'<path d="M21.2 15.9A10 10 0 1 1 8 2.8"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>',
@@ -870,9 +878,29 @@ function parseAmt(v){
   if(!/^-?\d+(\.\d+)?$/.test(s)&&!/^-?\.\d+$/.test(s))return NaN;
   const n=Number(s);return Number.isFinite(n)&&Math.abs(n)<1e12?n:NaN}
 let uidN=0;const uid=()=>Date.now().toString(36)+(uidN++).toString(36)+Math.random().toString(36).slice(2,7);
+/* Budgetzeitraum: vom Tag D eines Monats bis Tag D−1 des Folgemonats (inkl.). D = 1–28 oder 'last' (letzter Tag des Monats) */
+function normPS(v){if(v==='last')return 'last';const n=Math.round(+v);return Number.isFinite(n)&&n>=1&&n<=28?n:25}
+const dimOf=(y,m)=>new Date(y,m+1,0).getDate();
+const psDay=(y,m)=>{const D=S&&S.periodStart!=null?S.periodStart:25;return D==='last'?dimOf(y,m):Math.min(D,dimOf(y,m))};
+const dkey=d=>ymd(d.getFullYear(),d.getMonth(),d.getDate());
+const dmy=s=>{const[y,m,d]=s.split('-');return `${d}.${m}.`};
+/* Zeitraum mit Startmonat (y,m) */
+function periodAt(y,m){const a=new Date(y,m,psDay(y,m));const ny=a.getFullYear(),nm=a.getMonth()+1;const n=new Date(ny,nm,psDay(new Date(ny,nm,1).getFullYear(),new Date(ny,nm,1).getMonth()));const e=new Date(n.getFullYear(),n.getMonth(),n.getDate()-1);
+  const start=dkey(a),end=dkey(e),next=dkey(n);const len=Math.round((Date.UTC(n.getFullYear(),n.getMonth(),n.getDate())-Date.UTC(a.getFullYear(),a.getMonth(),a.getDate()))/864e5);
+  return{start,end,next,len,y:e.getFullYear(),m:e.getMonth(),sy:a.getFullYear(),sm:a.getMonth(),key:start,label:`${dmy(start)}–${dmy(end)}`,labelY:`${dmy(start)}–${dmy(end)}${e.getFullYear()}`}}
+/* Zeitraum, der das Datum d enthält; off = Anzahl Zeiträume zurück */
+function periodOf(d,off=0){d=d||NOW;let y=d.getFullYear(),m=d.getMonth();if(d.getDate()<psDay(y,m))m--;const t=new Date(y,m-off,1);return periodAt(t.getFullYear(),t.getMonth())}
+const curPeriod=()=>periodOf(NOW);
+const isCalMonth=()=>S.periodStart===1;
+const periodShort=pr=>isCalMonth()?MON[pr.m]:pr.label;
+const prevWord=()=>isCalMonth()?'Vormonat':'Vorperiode';
+function lastPeriods(n){const out=[];for(let i=n-1;i>=0;i--)out.push(periodOf(NOW,i));return out}
+function daysLeftIn(pr){const t=parseD(TODAY),n=parseD(pr.next);return Math.max(1,Math.round((Date.UTC(n.getFullYear(),n.getMonth(),n.getDate())-Date.UTC(t.getFullYear(),t.getMonth(),t.getDate()))/864e5))}
+const nextLong=pr=>{const d=parseD(pr.next);return `${d.getDate()}. ${MONF[d.getMonth()]}`};
+const daysTxt=n=>`${n} ${n===1?'Tag':'Tage'}`;
 function lastMonths(n){const out=[];for(let i=n-1;i>=0;i--){const d=new Date(NOW.getFullYear(),NOW.getMonth()-i,1);out.push({y:d.getFullYear(),m:d.getMonth(),key:`${d.getFullYear()}-${pad2(d.getMonth()+1)}`})}return out}
 
-function emptyData(){return{v:SCHEMA,userData:true,created:new Date().toISOString(),cats:[],tx:[],budgets:{},goals:[],accounts:[],merchantCats:{},onboard:0,budgetMode:'balance'}}
+function emptyData(){return{v:SCHEMA,userData:true,created:new Date().toISOString(),cats:[],tx:[],budgets:{},goals:[],accounts:[],merchantCats:{},onboard:0,budgetMode:'balance',periodStart:25}}
 let S;
 let persistWarned=false,storageOk=true;const LOAD_WARN=[];
 function persist(d){try{localStorage.setItem(KEY,JSON.stringify(d||S));persistWarned=false;return true}catch(e){if(!persistWarned){persistWarned=true;const q=e&&(e.name==='QuotaExceededError'||e.code===22);setTimeout(()=>toast(q?'Speicher voll – Änderungen konnten nicht gesichert werden':'Speichern nicht möglich – Änderungen gelten nur bis zum Schliessen',null,'warn'),0)}return false}}
@@ -887,7 +915,7 @@ function sanitize(s){
   const budgets={};const sb=s.budgets&&typeof s.budgets==='object'?s.budgets:{};cats.forEach(c=>{const v=+sb[c.id];if(c.type!=='inc'&&Number.isFinite(v)&&v>0)budgets[c.id]=r2(v)});
   const goals=(Array.isArray(s.goals)?s.goals:[]).filter(g=>g&&typeof g==='object'&&String(g.name||'').trim()&&+g.target>0).map(g=>({id:String(g.id||uid()),name:String(g.name).slice(0,60),target:r2(+g.target),saved:Number.isFinite(+g.saved)&&+g.saved>=0?r2(+g.saved):0,due:isDate(g.due)?g.due:ymd(NOW.getFullYear()+1,NOW.getMonth(),1),color:HEX.test(g.color)?g.color:'#8b9bff',icon:ICONS[g.icon]?g.icon:'target'}));
   const merchantCats={};if(s.merchantCats&&typeof s.merchantCats==='object')for(const k in s.merchantCats)if(cids.has(s.merchantCats[k]))merchantCats[String(k).slice(0,40)]=s.merchantCats[k];
-  return{v:SCHEMA,userData:true,created:typeof s.created==='string'?s.created:new Date().toISOString(),cats,tx,budgets,goals,accounts,merchantCats,onboard:s.onboard?1:0,budgetMode:s.budgetMode==='cats'?'cats':'balance'}}
+  return{v:SCHEMA,userData:true,created:typeof s.created==='string'?s.created:new Date().toISOString(),cats,tx,budgets,goals,accounts,merchantCats,onboard:s.onboard?1:0,budgetMode:s.budgetMode==='cats'?'cats':'balance',periodStart:normPS(s.periodStart)}}
 /* Erkennt die früher automatisch erzeugten Beispieldaten (Version 1) */
 function isDemoData(o){return !!o&&typeof o==='object'&&!o.userData&&(!o.v||o.v<SCHEMA)}
 const MIGRATED=[];
@@ -913,18 +941,18 @@ function load(){
 S=load();syncCats();
 if(MIGRATED.length&&!S.tx.length)setTimeout(()=>{IDB.clear();toast('Beispieldaten entfernt – Vela ist jetzt leer und bereit für Ihre Zahlen')},700);
 
-function monthStats(key){let inc=0,exp=0;const c={};for(const t of S.tx){if(t.date.slice(0,7)!==key)continue;const v=Math.round(t.amount*100);if(v>0)inc+=v;else{exp-=v;c[t.cat]=(c[t.cat]||0)-v}}const byCat={};for(const k in c)byCat[k]=c[k]/100;return{inc:inc/100,exp:exp/100,byCat}}
+function monthStats(pr){pr=pr||curPeriod();let inc=0,exp=0;const c={};for(const t of S.tx){if(t.date<pr.start||t.date>pr.end)continue;const v=Math.round(t.amount*100);if(v>0)inc+=v;else{exp-=v;c[t.cat]=(c[t.cat]||0)-v}}const byCat={};for(const k in c)byCat[k]=c[k]/100;return{inc:inc/100,exp:exp/100,byCat}}
 const sortTx=()=>S.tx.sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:(a.id<b.id?1:a.id>b.id?-1:0));
 function accBalance(a){return(Math.round(a.base*100)+S.tx.reduce((s,t)=>s+(t.acc===a.id?Math.round(t.amount*100):0),0))/100}
 /* Nettovermögen = Startsaldi aller Konten + alle Buchungen (auch solche ohne Konto) */
 function netWorth(){return(S.accounts.reduce((s,a)=>s+Math.round(a.base*100),0)+S.tx.reduce((s,t)=>s+Math.round(t.amount*100),0))/100}
-/* Monatsbudget aus dem Kontostand: Saldo am Monatsanfang + Einnahmen dieses Monats */
-function balanceBudget(){const first=CUR_KEY+'-01';let before=S.accounts.reduce((x,a)=>x+Math.round(a.base*100),0),inc=0,exp=0;
-  for(const t of S.tx){const v=Math.round(t.amount*100);if(!Number.isFinite(v))continue;if(t.date<first)before+=v;else if(t.date.slice(0,7)===CUR_KEY){if(v>0)inc+=v;else exp-=v}else before+=0}
+/* Budget aus dem Kontostand: Saldo vor Beginn des Budgetzeitraums + Einnahmen im Zeitraum */
+function balanceBudget(){const pr=curPeriod(),first=pr.start;let before=S.accounts.reduce((x,a)=>x+Math.round(a.base*100),0),inc=0,exp=0;
+  for(const t of S.tx){const v=Math.round(t.amount*100);if(!Number.isFinite(v))continue;if(t.date<first)before+=v;else if(t.date<=pr.end){if(v>0)inc+=v;else exp-=v}}
   const start=before/100,income=inc/100,spent=exp/100,budget=(before+inc)/100,avail=(before+inc-exp)/100;
-  const dim=new Date(NOW.getFullYear(),NOW.getMonth()+1,0).getDate(),daysLeft=dim-NOW.getDate()+1;
+  const daysLeft=daysLeftIn(pr);
   const p=budget>0?spent/budget*100:(spent>0?100:0);
-  return{start,income,spent,budget,avail,daysLeft,perDay:avail>0?Math.floor(avail/daysLeft*100)/100:0,p}}
+  return{pr,start,income,spent,budget,avail,daysLeft,perDay:avail>0?Math.floor(avail/daysLeft*100)/100:0,p}}
 const balMode=()=>S.budgetMode!=='cats';
 const unassigned=()=>S.tx.reduce((s,t)=>s+(t.acc&&S.accounts.some(a=>a.id===t.acc)?0:Math.round(t.amount*100)),0)/100;
 
@@ -939,7 +967,7 @@ const curFmt=v=>`<span class="cur">CHF</span>${grp(v)}`;
 const VIEWS=[
   {id:'dashboard',label:'Übersicht',icon:'grid',title:()=>greeting(),sub:()=>`${dateLong(TODAY)} · Ihre Finanzen auf einen Blick`},
   {id:'transactions',label:'Transaktionen',icon:'list',title:()=>'Transaktionen',sub:()=>'Alle Buchungen durchsuchen, filtern und erfassen'},
-  {id:'budgets',label:'Budgets',icon:'pie',title:()=>'Budgets',sub:()=>`Monatsbudgets für ${MONF[NOW.getMonth()]} ${NOW.getFullYear()}`},
+  {id:'budgets',label:'Budgets',icon:'pie',title:()=>'Budgets',sub:()=>`Budget ${curPeriod().labelY}`},
   {id:'goals',label:'Sparziele',icon:'target',title:()=>'Sparziele',sub:()=>'Schritt für Schritt zu Ihren Zielen'},
   {id:'categories',label:'Kategorien',icon:'tag',title:()=>'Kategorien',sub:()=>'Ihre eigenen Kategorien für Ausgaben und Einnahmen'},
   {id:'settings',label:'Einstellungen',icon:'gear',title:()=>'Einstellungen',sub:()=>'Konten, Darstellung und Daten'}
@@ -965,33 +993,33 @@ function go(id){
 function sparkPath(vals,w=120,h=50){const max=Math.max(...vals),min=Math.min(...vals),rg=max-min||1;const pts=vals.map((v,i)=>[i*w/(vals.length-1),h-6-(v-min)/rg*(h-16)]);let d=`M${pts[0][0]},${pts[0][1]}`;for(let i=1;i<pts.length;i++){const[x0,y0]=pts[i-1],[x1,y1]=pts[i],mx=(x0+x1)/2;d+=` C${mx},${y0} ${mx},${y1} ${x1},${y1}`}return d}
 function spark(vals,color,id){if(!vals.some(v=>Math.abs(v)>0.004))return `<svg class="spark" viewBox="0 0 120 50" preserveAspectRatio="none" aria-hidden="true"><path d="M0,40 L120,40" fill="none" style="stroke:${color};opacity:.35" stroke-width="1.5" stroke-dasharray="3 5" vector-effect="non-scaling-stroke"/></svg>`;const d=sparkPath(vals);return `<svg class="spark" viewBox="0 0 120 50" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:${color};stop-opacity:.3"/><stop offset="1" style="stop-color:${color};stop-opacity:0"/></linearGradient></defs><path d="${d} L120,50 L0,50Z" fill="url(#${id})"/><path d="${d}" fill="none" style="stroke:${color}" stroke-width="1.8" vector-effect="non-scaling-stroke"/></svg>`}
 function deltaChip(cur,prev,invert=false){
-  if(!prev||!Number.isFinite(prev))return `<span class="chip neutral">–</span><span class="hide-sm">ggü. Vormonat</span>`;const ch=(cur-prev)/Math.abs(prev)*100;if(!Number.isFinite(ch))return `<span class="chip neutral">–</span>`;const good=invert?ch<=0:ch>=0;
-  return `<span class="chip ${good?'up':'down'}">${ic(ch>=0?'trendUp':'trendDown')}${pct(Math.abs(ch))}</span><span class="hide-sm">ggü. Vormonat</span>`;
+  if(!prev||!Number.isFinite(prev))return `<span class="chip neutral">–</span><span class="hide-sm">ggü. ${prevWord()}</span>`;const ch=(cur-prev)/Math.abs(prev)*100;if(!Number.isFinite(ch))return `<span class="chip neutral">–</span>`;const good=invert?ch<=0:ch>=0;
+  return `<span class="chip ${good?'up':'down'}">${ic(ch>=0?'trendUp':'trendDown')}${pct(Math.abs(ch))}</span><span class="hide-sm">ggü. ${prevWord()}</span>`;
 }
 function renderKPIs(){
-  const months=lastMonths(6), stats=months.map(m=>monthStats(m.key));
+  const months=lastPeriods(6), stats=months.map(m=>monthStats(m));
   const cur=stats[5], prev=stats[4];
   const nw=netWorth(), nwPrev=nw-(cur.inc-cur.exp);
   let run=nw;const nwSeries=[];for(let i=5;i>=0;i--){nwSeries.unshift(run);run-=stats[i].inc-stats[i].exp}
   const rate=cur.inc>0?(cur.inc-cur.exp)/cur.inc*100:null, ratePrev=prev.inc>0?(prev.inc-prev.exp)/prev.inc*100:null;
   const box=$('#kpis');
   if(!box.dataset.built){
-    const mon=MON[NOW.getMonth()];
+    const mon=periodShort(months[5]);
     box.innerHTML=`
     <div class="card kpi hero span-3" style="--i:0"><div class="kpi-top"><span class="kpi-ico" style="background:var(--accent-soft);color:var(--accent)">${ic('wallet')}</span>Nettovermögen</div><div class="kpi-val num" id="k1"></div><div class="kpi-foot" id="k1f"></div><div id="k1s"></div></div>
-    <div class="card kpi span-3" style="--i:1"><div class="kpi-top"><span class="kpi-ico" style="background:var(--mint-soft);color:var(--mint)">${ic('income')}</span>Einnahmen · ${mon}</div><div class="kpi-val num" id="k2"></div><div class="kpi-foot" id="k2f"></div><div id="k2s"></div></div>
-    <div class="card kpi span-3" style="--i:2"><div class="kpi-top"><span class="kpi-ico" style="background:var(--danger-soft);color:var(--danger)">${ic('arrowUpRight')}</span>Ausgaben · ${mon}</div><div class="kpi-val num" id="k3"></div><div class="kpi-foot" id="k3f"></div><div id="k3s"></div></div>
-    <div class="card kpi span-3" style="--i:3"><div class="kpi-top"><span class="kpi-ico" style="background:var(--warn-soft);color:var(--warn)">${ic('percent')}</span>Sparquote · ${mon}</div><div class="kpi-val num" id="k4"></div><div class="kpi-foot" id="k4f"></div><div id="k4s"></div></div>`;
+    <div class="card kpi span-3" style="--i:1"><div class="kpi-top"><span class="kpi-ico" style="background:var(--mint-soft);color:var(--mint)">${ic('income')}</span><span class="kpi-lbl">Einnahmen<small>${mon}</small></span></div><div class="kpi-val num" id="k2"></div><div class="kpi-foot" id="k2f"></div><div id="k2s"></div></div>
+    <div class="card kpi span-3" style="--i:2"><div class="kpi-top"><span class="kpi-ico" style="background:var(--danger-soft);color:var(--danger)">${ic('arrowUpRight')}</span><span class="kpi-lbl">Ausgaben<small>${mon}</small></span></div><div class="kpi-val num" id="k3"></div><div class="kpi-foot" id="k3f"></div><div id="k3s"></div></div>
+    <div class="card kpi span-3" style="--i:3"><div class="kpi-top"><span class="kpi-ico" style="background:var(--warn-soft);color:var(--warn)">${ic('percent')}</span><span class="kpi-lbl">Sparquote<small>${mon}</small></span></div><div class="kpi-val num" id="k4"></div><div class="kpi-foot" id="k4f"></div><div id="k4s"></div></div>`;
     box.dataset.built=1;
   }
   countUp($('#k1'),nw,curFmt);countUp($('#k2'),cur.inc,curFmt);countUp($('#k3'),cur.exp,curFmt);
-  if(rate==null){const k=$('#k4');k.dataset.v=0;k.innerHTML='–';k.title='Ohne Einnahmen im laufenden Monat nicht berechenbar'}
+  if(rate==null){const k=$('#k4');k.dataset.v=0;k.innerHTML='–';k.title='Ohne Einnahmen im laufenden Budgetzeitraum nicht berechenbar'}
   else countUp($('#k4'),rate,v=>`${v<-0.05?'−':''}${Math.abs(v).toFixed(1)}<span class="cur" style="margin-left:4px">%</span>`);
   $('#k1f').innerHTML=deltaChip(nw,nwPrev);
   $('#k2f').innerHTML=deltaChip(cur.inc,prev.inc);
   $('#k3f').innerHTML=deltaChip(cur.exp,prev.exp,true);
-  if(rate==null||ratePrev==null)$('#k4f').innerHTML=`<span class="chip neutral">–</span><span class="hide-sm">${rate==null?'Noch keine Einnahmen':'ggü. Vormonat'}</span>`;
-  else{const dr=rate-ratePrev;$('#k4f').innerHTML=`<span class="chip ${dr>=0?'up':'down'}">${ic(dr>=0?'trendUp':'trendDown')}${Math.abs(dr).toFixed(1)} Pkt.</span><span class="hide-sm">ggü. Vormonat</span>`}
+  if(rate==null||ratePrev==null)$('#k4f').innerHTML=`<span class="chip neutral">–</span><span class="hide-sm">${rate==null?'Noch keine Einnahmen':'ggü. '+prevWord()}</span>`;
+  else{const dr=rate-ratePrev;$('#k4f').innerHTML=`<span class="chip ${dr>=0?'up':'down'}">${ic(dr>=0?'trendUp':'trendDown')}${Math.abs(dr).toFixed(1)} Pkt.</span><span class="hide-sm">ggü. ${prevWord()}</span>`}
   $('#k1s').innerHTML=spark(nwSeries,'var(--accent)','sp1');
   $('#k2s').innerHTML=spark(stats.map(s=>s.inc),'var(--mint)','sp2');
   $('#k3s').innerHTML=spark(stats.map(s=>s.exp),'var(--danger)','sp3');
@@ -1002,7 +1030,7 @@ let range=6;
 function niceMax(v){if(v<=0)return 1000;const p=Math.pow(10,Math.floor(Math.log10(v)));const n=v/p;const s=n<=1?1:n<=1.5?1.5:n<=2?2:n<=2.5?2.5:n<=3?3:n<=4?4:n<=5?5:n<=6?6:n<=8?8:10;return s*p}
 function renderChart(animate=true){
   const wrap=$('#chartWrap'),svg=$('#chartSvg');const W=wrap.clientWidth,H=wrap.clientHeight;if(!W)return;
-  const data=lastMonths(range).map(m=>{const s=monthStats(m.key);return{...m,inc:s.inc,exp:s.exp}});
+  const data=lastPeriods(range).map(m=>{const s=monthStats(m);return{...m,inc:s.inc,exp:s.exp}});{const cs=$('#cfSub');if(cs)cs.textContent=isCalMonth()?'Einnahmen und Ausgaben pro Monat':`Einnahmen und Ausgaben pro Budgetzeitraum (ab dem ${S.periodStart==='last'?'Monatsletzten':S.periodStart+'.'})`}
   const pad={l:48,r:16,t:14,b:30};const iw=W-pad.l-pad.r,ih=H-pad.t-pad.b;
   const max=niceMax(Math.max(...data.map(d=>Math.max(d.inc,d.exp)))*1.05);
   const X=i=>pad.l+i*iw/(data.length-1), Y=v=>pad.t+(1-v/max)*ih;
@@ -1033,23 +1061,23 @@ function renderChart(animate=true){
   const tip=$('#chartTip'),hl=$('#hLine'),d1=$('#hd1'),d2=$('#hd2'),rect=$('#hRect');
   const show=e=>{const b=svg.getBoundingClientRect();const cx=e.touches?e.touches[0].clientX:e.clientX;let i=Math.round((cx-b.left-pad.l)/(iw/(data.length-1)));i=Math.max(0,Math.min(data.length-1,i));const d=data[i],x=X(i);
     hl.setAttribute('x1',x);hl.setAttribute('x2',x);hl.style.opacity=1;d1.setAttribute('cx',x);d1.setAttribute('cy',Y(d.inc));d2.setAttribute('cx',x);d2.setAttribute('cy',Y(d.exp));d1.style.opacity=d2.style.opacity=1;
-    const net=d.inc-d.exp;tip.innerHTML=`<div class="t">${MONF[d.m]} ${d.y}${d.key===CUR_KEY?' · laufend':''}</div><div class="r"><span><i style="background:var(--mint)"></i>Einnahmen</span><b class="num">${chf(d.inc)}</b></div><div class="r"><span><i style="background:var(--accent)"></i>Ausgaben</span><b class="num">${chf(d.exp)}</b></div><hr><div class="r"><span>Saldo</span><b class="num" style="color:${net>=0?'var(--mint)':'var(--danger)'}">${chf(net,{sign:true})}</b></div>`;
+    const net=d.inc-d.exp;tip.innerHTML=`<div class="t">${isCalMonth()?MONF[d.m]+' '+d.y:d.labelY}${d.key===curPeriod().key?' · laufend':''}</div><div class="r"><span><i style="background:var(--mint)"></i>Einnahmen</span><b class="num">${chf(d.inc)}</b></div><div class="r"><span><i style="background:var(--accent)"></i>Ausgaben</span><b class="num">${chf(d.exp)}</b></div><hr><div class="r"><span>Saldo</span><b class="num" style="color:${net>=0?'var(--mint)':'var(--danger)'}">${chf(net,{sign:true})}</b></div>`;
     const tw=tip.offsetWidth;let tx=x+16;if(tx+tw>W)tx=x-tw-16;if(tx<0)tx=4;tip.style.left=tx+'px';tip.style.top=Math.max(0,Math.min(Y(Math.max(d.inc,d.exp))-20,H-130))+'px';tip.classList.add('show')};
   const hide=()=>{tip.classList.remove('show');hl.style.opacity=0;d1.style.opacity=d2.style.opacity=0};
   rect.addEventListener('mousemove',show);rect.addEventListener('touchstart',show,{passive:true});rect.addEventListener('touchmove',show,{passive:true});rect.addEventListener('mouseleave',hide);rect.addEventListener('touchend',()=>setTimeout(hide,1800));
 }
 
 function renderDonut(){
-  const st=monthStats(CUR_KEY);const entries=Object.keys(st.byCat).map(k=>[k,st.byCat[k]||0]).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]);
+  const st=monthStats(curPeriod());const entries=Object.keys(st.byCat).map(k=>[k,st.byCat[k]||0]).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]);
   const total=entries.reduce((s,e)=>s+e[1],0);const r=78,C=2*Math.PI*r;let off=0;
   const svg=$('#donutSvg');
-  $('#donutSub').textContent=`${MONF[NOW.getMonth()]} ${NOW.getFullYear()}`;
+  $('#donutSub').textContent=isCalMonth()?`${MONF[NOW.getMonth()]} ${NOW.getFullYear()}`:curPeriod().labelY;
   const gap=entries.length>1?2.5:0;
   svg.innerHTML=`<circle cx="100" cy="100" r="${r}" fill="none" style="stroke:var(--input)" stroke-width="22"/>`+entries.map(([k,v],i)=>{const len=v/total*C;const s=`<circle class="seg" data-k="${k}" cx="100" cy="100" r="${r}" fill="none" stroke="${catOf(k).color}" stroke-width="22" transform="rotate(-90 100 100)" style="stroke-dasharray:0 ${C};stroke-dashoffset:${-off};transition-delay:${i*60}ms" data-len="${Math.max(len-gap,.5)}"><title>${esc(catOf(k).label)}: ${chf(v)}</title></circle>`;off+=len;return s}).join('');
   requestAnimationFrame(()=>requestAnimationFrame(()=>$$('.seg',svg).forEach(c=>c.style.strokeDasharray=`${c.dataset.len} ${C}`)));
   const setCenter=(l,v)=>{$('#donutL').textContent=l;$('#donutV').textContent=chf(v)};
   setCenter('Total Ausgaben',total);
-  $('#donutLegend').innerHTML=entries.length?entries.map(([k,v])=>`<button data-k="${k}"><i style="background:${catOf(k).color}"></i><span class="n">${esc(catOf(k).label)}</span><span class="p num">${Math.round(v/total*100)} %</span></button>`).join(''):'<div class="soft-empty">Noch keine Ausgaben in diesem Monat. Die Aufteilung nach Ihren Kategorien erscheint hier.</div>';
+  $('#donutLegend').innerHTML=entries.length?entries.map(([k,v])=>`<button data-k="${k}"><i style="background:${catOf(k).color}"></i><span class="n">${esc(catOf(k).label)}</span><span class="p num">${Math.round(v/total*100)} %</span></button>`).join(''):'<div class="soft-empty">Noch keine Ausgaben in diesem Budgetzeitraum. Die Aufteilung nach Ihren Kategorien erscheint hier.</div>';
   const hl=k=>{$$('.seg',svg).forEach(c=>{c.classList.toggle('hl',c.dataset.k===k);c.classList.toggle('dim',!!k&&c.dataset.k!==k)});if(k)setCenter(catOf(k).label,st.byCat[k]);else setCenter('Total Ausgaben',total)};
   [...$$('.seg',svg),...$$('#donutLegend button')].forEach(el=>{el.addEventListener('mouseenter',()=>hl(el.dataset.k));el.addEventListener('mouseleave',()=>hl(null));el.addEventListener('focus',()=>hl(el.dataset.k));el.addEventListener('blur',()=>hl(null))});
 }
@@ -1060,14 +1088,13 @@ function txRow(t,withDel=true,withDate=false){
 }
 function emptyState(t,s,icon='search',btn=''){return `<div class="empty"><div class="e-ico">${ic(icon)}</div><strong>${t}</strong>${s}${btn}</div>`}
 function renderRecent(){sortTx();$('#recentList').innerHTML=S.tx.slice(0,6).map(t=>txRow(t,false,true)).join('')||emptyState('Noch keine Buchungen','Erfassen Sie Ihre erste Einnahme oder Ausgabe – von Hand oder per Belegfoto.','receipt',`<button class="btn btn-primary btn-sm" data-action="add">${ic('plus','width:15px;height:15px')}Erste Buchung erfassen</button>`)}
-function budgetInfo(k,st){const spent=(st||monthStats(CUR_KEY)).byCat[k]||0;const b=S.budgets[k]||0;const p=b?spent/b*100:0;return{spent,b,p,status:!b?'none':spent>b+0.004?'over':p>=85?'warn':'ok'}}
+function budgetInfo(k,st){const spent=(st||monthStats(curPeriod())).byCat[k]||0;const b=S.budgets[k]||0;const p=b?spent/b*100:0;return{spent,b,p,status:!b?'none':spent>b+0.004?'over':p>=85?'warn':'ok'}}
 const statusColor=s=>s==='over'?'var(--danger)':s==='warn'?'var(--warn)':null;
 function animateBars(root){requestAnimationFrame(()=>requestAnimationFrame(()=>$$('.bar>span',root).forEach(s=>s.style.width=s.dataset.w+'%')))}
 function barFill(col,base){return col?`background:${col}`:`background:linear-gradient(90deg,${base}99,${base})`}
 function renderBudgetPreview(){
   const list=expCats().filter(k=>S.budgets[k]).map(k=>({k,...budgetInfo(k)})).sort((a,b)=>b.p-a.p).slice(0,5);
-  const daysLeft=new Date(NOW.getFullYear(),NOW.getMonth()+1,0).getDate()-NOW.getDate();
-  $('#budPrevSub').textContent=`Noch ${daysLeft} ${daysLeft===1?'Tag':'Tage'} im ${MONF[NOW.getMonth()]}`;
+  {const pr=curPeriod(),dl=daysLeftIn(pr);$('#budPrevSub').textContent=`Noch ${daysTxt(dl)} bis zum ${nextLong(pr)}`}
   let head='';if(balMode()&&S.accounts.length){const b=balanceBudget();const p=Math.min(100,Math.max(0,b.p));const col=b.avail<0||b.p>100?'var(--danger)':b.p>85?'var(--warn)':'var(--accent)';head=`<div class="b-row b-total"><div class="b-line"><div class="b-name"><span class="dot" style="background:var(--accent-soft);color:var(--accent)">${ic('wallet')}</span>Monatsbudget</div><div class="b-amt num"><b>${chf(b.spent)}</b> / ${grp(b.budget,0)}</div></div><div class="bar" role="progressbar" aria-valuenow="${Math.round(p)}" aria-valuemin="0" aria-valuemax="100" aria-label="Monatsbudget"><span data-w="${p}" style="background:${col}"></span></div><div class="b-sub">${b.avail<0?'Kontostand im Minus':`${chf(b.avail)} verfügbar · ${chf(b.perDay)} pro Tag`}</div></div>`}
   $('#budgetPreview').innerHTML=head+(list.length||head?'':`<div class="soft-empty">${expCats().length?'Noch keine Budgets festgelegt. Legen Sie unter «Budgets» Limiten pro Kategorie fest.':'Budgets legen Sie pro Kategorie fest. Erstellen Sie zuerst Ihre Ausgaben-Kategorien.'}</div>`)+list.map(x=>{const c=catOf(x.k);return `<div class="b-row"><div class="b-line"><div class="b-name"><span class="dot" style="background:${c.color}1f;color:${c.color}">${ic(c.icon)}</span>${esc(c.label)}</div><div class="b-amt num"><b>${chf(x.spent)}</b> / ${grp(x.b,0)}</div></div><div class="bar" role="progressbar" aria-valuenow="${Math.round(x.p)}" aria-valuemin="0" aria-valuemax="100" aria-label="Budget ${esc(c.label)}"><span data-w="${Math.min(100,x.p)}" style="${barFill(statusColor(x.status),c.color)}"></span></div></div>`}).join('');
   animateBars($('#budgetPreview'));
@@ -1094,17 +1121,17 @@ function renderTx(){
 }
 
 function renderBudgets(){
-  const dim=new Date(NOW.getFullYear(),NOW.getMonth()+1,0).getDate(),day=NOW.getDate();const bal=balMode();
+  const PR=curPeriod(),dim=PR.len,day=dim-daysLeftIn(PR)+1;const bal=balMode();
   const sumEl=$('#budgetSummary');
   if(bal){
     if(!S.accounts.length){sumEl.innerHTML=`<div class="bs-empty"><span class="be-ico">${ic('wallet')}</span><div><b>Monatsbudget aus Ihrem Kontostand</b><small>Fügen Sie ein Konto mit Ihrem aktuellen Guthaben hinzu – Vela nimmt den Kontostand dann automatisch als Monatsbudget.</small></div><button class="btn btn-primary btn-sm" data-action="newacc">${ic('plus','width:15px;height:15px')}Konto hinzufügen</button></div>`}
     else{const b=balanceBudget();const neg=b.avail<0;const col=neg||b.p>100?'#ff6b81':b.p>85?'#ffb547':'#8b9bff';
-      sumEl.innerHTML=`${ring(Math.min(100,Math.max(0,b.p)),col,84,8)}<div class="s-item"><div class="l">Ausgegeben</div><div class="v num">${chf(b.spent)}</div></div><div class="s-item"><div class="l">Gesamtbudget</div><div class="v num"${b.budget<0?' style="color:var(--danger)"':''}>${chf(b.budget)}</div><div class="s-sub">${ic('wallet','width:12px;height:12px')}Automatisch aus Ihrem Kontostand</div></div><div class="s-item"><div class="l">Verfügbar</div><div class="v num" style="color:${neg?'var(--danger)':'var(--mint)'}">${chf(b.avail)}</div></div><div class="s-item"><div class="l">Pro Tag verfügbar</div><div class="v num">${neg||b.avail===0?'–':chf(b.perDay)}</div><div class="s-sub">${neg?'Kontostand im Minus':`noch ${b.daysLeft} ${b.daysLeft===1?'Tag':'Tage'} im ${MONF[NOW.getMonth()]}`}</div></div>
-      <div class="s-note">Kontostand am 1. ${MONF[NOW.getMonth()]} ${chf(b.start)}${b.income?` + Einnahmen ${chf(b.income)}`:''} = Budget ${chf(b.budget)}${neg?' · Ihr Kontostand ist negativ – Ausgaben übersteigen Ihr Guthaben.':''}</div>`}
+      sumEl.innerHTML=`${ring(Math.min(100,Math.max(0,b.p)),col,84,8)}<div class="s-item"><div class="l">Ausgegeben</div><div class="v num">${chf(b.spent)}</div></div><div class="s-item"><div class="l">Gesamtbudget</div><div class="v num"${b.budget<0?' style="color:var(--danger)"':''}>${chf(b.budget)}</div><div class="s-sub">${ic('wallet','width:12px;height:12px')}Automatisch aus Ihrem Kontostand</div></div><div class="s-item"><div class="l">Verfügbar</div><div class="v num" style="color:${neg?'var(--danger)':'var(--mint)'}">${chf(b.avail)}</div></div><div class="s-item"><div class="l">Pro Tag verfügbar</div><div class="v num">${neg||b.avail===0?'–':chf(b.perDay)}</div><div class="s-sub">${neg?'Kontostand im Minus':`noch ${daysTxt(b.daysLeft)} bis zum ${nextLong(b.pr)}`}</div></div>
+      <div class="s-note">Budget ${b.pr.labelY} · Kontostand vor dem ${(d=>d.getDate()+'. '+MONF[d.getMonth()])(parseD(b.pr.start))} ${chf(b.start)}${b.income?` + Einnahmen ${chf(b.income)}`:''} = Budget ${chf(b.budget)}${neg?' · Ihr Kontostand ist negativ – Ausgaben übersteigen Ihr Guthaben.':''}</div>`}
   }else{
     let tb=0,ts=0;expCats().forEach(k=>{const x=budgetInfo(k);tb+=x.b;ts+=x.spent});
     const p=tb?ts/tb*100:0;
-    sumEl.innerHTML=`${ring(p,p>100?'#ff6b81':'#8b9bff',84,8)}<div class="s-item"><div class="l">Ausgegeben</div><div class="v num">${chf(ts)}</div></div><div class="s-item"><div class="l">Gesamtbudget</div><div class="v num">${chf(tb)}</div><div class="s-sub">Summe der Kategorie-Budgets</div></div><div class="s-item"><div class="l">Verfügbar</div><div class="v num" style="color:${tb-ts>=0?'var(--mint)':'var(--danger)'}">${chf(tb-ts)}</div></div><div class="s-item"><div class="l">Monat verstrichen</div><div class="v num">${Math.round(day/dim*100)} %</div></div>`;
+    sumEl.innerHTML=`${ring(p,p>100?'#ff6b81':'#8b9bff',84,8)}<div class="s-item"><div class="l">Ausgegeben</div><div class="v num">${chf(ts)}</div></div><div class="s-item"><div class="l">Gesamtbudget</div><div class="v num">${chf(tb)}</div><div class="s-sub">Summe der Kategorie-Budgets</div></div><div class="s-item"><div class="l">Verfügbar</div><div class="v num" style="color:${tb-ts>=0?'var(--mint)':'var(--danger)'}">${chf(tb-ts)}</div></div><div class="s-item"><div class="l">Zeitraum verstrichen</div><div class="v num">${Math.round(day/dim*100)} %</div></div>`;
   }
   animateRings(sumEl);
   const ks=expCats();
@@ -1114,8 +1141,8 @@ function renderBudgets(){
     return `<div class="card budget-card span-3" style="--i:${i+1}"><div class="card-head" style="margin-bottom:0"><div class="b-name"><span class="dot" style="background:${c.color}1f;color:${c.color};width:36px;height:36px;border-radius:11px">${ic(c.icon)}</span><span class="b-lbl">${esc(c.label)}</span></div><button class="edit-btn" data-editbudget="${esc(k)}" aria-label="Budget ${esc(c.label)} bearbeiten">${ic('edit','width:16px;height:16px')}</button></div>
     <div class="b-big num">${chf(x.spent)}</div><div class="b-of num">${x.b?`von ${chf(x.b)} · ${Math.round(x.p)} %`:bal?`<button class="opt-limit" data-editbudget="${esc(k)}">Optional: Limit festlegen</button>`:'Tippen Sie auf den Stift, um ein Budget festzulegen'}</div>
     <div class="bar" role="progressbar" aria-valuenow="${Math.round(x.p)}" aria-valuemin="0" aria-valuemax="100" aria-label="Budget ${esc(c.label)}"><span data-w="${Math.min(100,x.p)}" style="${barFill(statusColor(x.status),c.color)}"></span></div>
-    <div class="b-foot"><span class="status-${x.status}"><b>${x.status==='none'?(bal?'Ohne Limit · diesen Monat':'Kein Budget festgelegt'):rest>=0?'Noch '+chf(rest)+' verfügbar':chf(-rest)+' über Budget'}</b></span></div>
-    <div class="b-foot" style="margin-top:6px"><span>Prognose Monatsende</span><b class="num" style="color:${x.b&&fc>x.b?'var(--warn)':'var(--text2)'}">${chf(fc)}</b></div></div>`}).join('')+`<button class="card add-card span-3" style="--i:${ks.length+1}" data-action="newcat"><span class="plus">${ic('plus','width:24px;height:24px')}</span>Neue Kategorie</button>`;
+    <div class="b-foot"><span class="status-${x.status}"><b>${x.status==='none'?(bal?'Ohne Limit · dieser Zeitraum':'Kein Budget festgelegt'):rest>=0?'Noch '+chf(rest)+' verfügbar':chf(-rest)+' über Budget'}</b></span></div>
+    <div class="b-foot" style="margin-top:6px"><span>Prognose bis ${dmy(PR.end)}</span><b class="num" style="color:${x.b&&fc>x.b?'var(--warn)':'var(--text2)'}">${chf(fc)}</b></div></div>`}).join('')+`<button class="card add-card span-3" style="--i:${ks.length+1}" data-action="newcat"><span class="plus">${ic('plus','width:24px;height:24px')}</span>Neue Kategorie</button>`;
   animateBars($('#budgetsGrid'));
 }
 
@@ -1486,13 +1513,13 @@ function renderOnboard(){
     <ol class="onb-steps">${steps.map((x,i)=>`<li class="${x.done?'ok':i===next?'cur':''}"><button data-action="${x.a}"${x.done?' aria-disabled="true"':''}><span class="os-n">${x.done?ic('check','width:15px;height:15px'):i+1}</span><span class="os-t"><b>${x.t}</b><small>${x.done?'Erledigt':x.s}</small></span>${x.done?'':`<span class="os-go">${ic('chev','width:16px;height:16px')}</span>`}</button></li>`).join('')}</ol></div>`}
 
 /* ===== Kategorien ===== */
-function catStats(id){let n=0,m=0;for(const t of S.tx)if(t.cat===id){n++;if(t.date.slice(0,7)===CUR_KEY)m+=Math.abs(Math.round(t.amount*100))}return{n,m:m/100}}
+function catStats(id){const cp=curPeriod();let n=0,m=0;for(const t of S.tx)if(t.cat===id){n++;if(t.date>=cp.start&&t.date<=cp.end)m+=Math.abs(Math.round(t.amount*100))}return{n,m:m/100}}
 const TYPEL={exp:'Ausgaben',inc:'Einnahmen',both:'Beides'};
 function renderCategories(){
   const v=$('#catsView');
   if(!S.cats.length){v.innerHTML=`<div class="card big-empty" style="--i:0"><div class="be-ico">${ic('tag')}</div><h3>Ihre eigenen Kategorien</h3><p>Vela gibt keine Kategorien vor. Legen Sie genau die an, die zu Ihnen passen – für Ausgaben wie «Essen», «Wohnen», «Restaurant» und für Einnahmen wie «Lohn».</p><div class="be-sugg">${['Essen','Wohnen','Restaurant','Gesundheit','Mobilität','Lohn'].map(x=>`<button class="fchip" data-quickcat="${x}">${ic('plus','width:13px;height:13px')}${x}</button>`).join('')}</div><button class="btn btn-primary" data-action="newcat">${ic('plus','width:16px;height:16px')}Kategorie anlegen</button></div>`;return}
   const grp2=t=>S.cats.filter(c=>t==='exp'?c.type!=='inc':c.type==='inc');
-  const card=(c,i)=>{const st=catStats(c.id);return `<div class="card cat-card" style="--i:${i}"><span class="cc-ico" style="background:${c.color}1f;color:${c.color}">${ic(c.icon)}</span><div class="cc-main"><div class="cc-name">${esc(c.label)}</div><div class="cc-meta">${TYPEL[c.type]}${c.fixed?' · Fixkosten':''} · ${st.n} ${st.n===1?'Buchung':'Buchungen'}${S.budgets[c.id]?` · Budget ${chf(S.budgets[c.id],{dec:0})}`:''}</div></div><div class="cc-amt num">${chf(st.m)}<small>${MON[NOW.getMonth()]}</small></div><button class="icon-btn" data-editcat="${esc(c.id)}" aria-label="Kategorie ${esc(c.label)} bearbeiten">${ic('edit','width:16px;height:16px')}</button><button class="icon-btn" data-delcat="${esc(c.id)}" aria-label="Kategorie ${esc(c.label)} löschen">${ic('trash','width:16px;height:16px')}</button></div>`};
+  const card=(c,i)=>{const st=catStats(c.id);return `<div class="card cat-card" style="--i:${i}"><span class="cc-ico" style="background:${c.color}1f;color:${c.color}">${ic(c.icon)}</span><div class="cc-main"><div class="cc-name">${esc(c.label)}</div><div class="cc-meta">${TYPEL[c.type]}${c.fixed?' · Fixkosten':''} · ${st.n} ${st.n===1?'Buchung':'Buchungen'}${S.budgets[c.id]?` · Budget ${chf(S.budgets[c.id],{dec:0})}`:''}</div></div><div class="cc-amt num">${chf(st.m)}<small>${periodShort(curPeriod())}</small></div><button class="icon-btn" data-editcat="${esc(c.id)}" aria-label="Kategorie ${esc(c.label)} bearbeiten">${ic('edit','width:16px;height:16px')}</button><button class="icon-btn" data-delcat="${esc(c.id)}" aria-label="Kategorie ${esc(c.label)} löschen">${ic('trash','width:16px;height:16px')}</button></div>`};
   const e=grp2('exp'),n=grp2('inc');let i=0;
   v.innerHTML=`<div class="cats-head"><div class="cats-sum"><b class="num">${S.cats.length}</b> ${S.cats.length===1?'Kategorie':'Kategorien'}</div><button class="btn btn-primary" data-action="newcat">${ic('plus','width:16px;height:16px')}Neue Kategorie</button></div>
   <div class="cat-sec"><h3>Ausgaben <span>${e.length}</span></h3>${e.length?`<div class="cat-list">${e.map(c=>card(c,i++)).join('')}</div>`:`<div class="soft-empty">Noch keine Ausgaben-Kategorien. <button class="link-btn" data-action="newcat" data-type-pre="exp">Jetzt anlegen →</button></div>`}</div>
@@ -1568,9 +1595,11 @@ function renderSettings(){
     </div>
     <div class="card set-sec" style="--i:1"><div class="card-head"><div><div class="card-title">Konten</div><div class="card-sub">Startsaldo und Zuordnung Ihrer Buchungen</div></div><button class="btn btn-secondary btn-sm" data-action="newacc">${ic('plus','width:15px;height:15px')}Konto</button></div>
       ${S.accounts.length?`<div class="set-list">${S.accounts.map(a=>`<button class="acc" data-editacc="${esc(a.id)}"><div class="tx-ico" style="background:${a.color}1f;color:${a.color}">${ic(a.icon)}</div><div class="tx-main"><div class="tx-name">${esc(a.name)}</div><div class="tx-meta">${esc(a.bank||'Konto')} · Start ${chf(a.base)}</div></div><div class="tx-amt num">${chf(accBalance(a))}</div><span class="acc-edit">${ic('edit','width:15px;height:15px')}</span></button>`).join('')}<div class="acc-total"><span>Nettovermögen</span><span class="v num">${chf(netWorth())}</span></div></div>`:`<div class="soft-empty">Noch keine Konten. Fügen Sie z. B. Ihr Privat- und Sparkonto mit dem aktuellen Saldo hinzu.</div>`}</div>
-    <div class="card set-sec" style="--i:2"><div class="card-head"><div><div class="card-title">Monatsbudget</div><div class="card-sub">Wie das Gesamtbudget berechnet wird</div></div></div>
+    <div class="card set-sec" style="--i:2"><div class="card-head"><div><div class="card-title">Monatsbudget</div><div class="card-sub">Berechnung und Zeitraum Ihres Budgets</div></div></div>
       <div class="seg-ctl seg-wide" role="group" aria-label="Budget-Modus"><button data-bmode="balance" aria-pressed="${balMode()}">${ic('wallet','width:15px;height:15px')}Kontostand als Budget</button><button data-bmode="cats" aria-pressed="${!balMode()}">${ic('pie','width:15px;height:15px')}Summe der Kategorie-Budgets</button></div>
-      <p class="set-note" style="margin:12px 0 0">${ic('info','width:15px;height:15px')}${balMode()?'Ihr Guthaben am Monatsanfang plus Einnahmen dieses Monats (z. B. Taschengeld) ist Ihr Monatsbudget. Verfügbar = aktueller Kontostand. Limiten pro Kategorie bleiben optional.':'Das Gesamtbudget ist die Summe der Budgets, die Sie pro Kategorie festlegen.'}</p></div>
+      <div class="ps-row"><label for="psSel">Budgetzeitraum beginnt am</label><select class="input" id="psSel" data-psel>${Array.from({length:28},(_,i)=>i+1).map(i=>`<option value="${i}"${S.periodStart===i?' selected':''}>${i}.${i===25?' (Taschengeld-Tag)':''}</option>`).join('')}<option value="last"${S.periodStart==='last'?' selected':''}>Letzter Tag des Monats</option></select></div>
+      <p class="set-note ps-info">${ic('calendar','width:15px;height:15px')}<span>Aktueller Zeitraum: <b class="num">${curPeriod().labelY}</b> · noch ${daysTxt(daysLeftIn(curPeriod()))} bis zum ${nextLong(curPeriod())}</span></p>
+      <p class="set-note" style="margin:12px 0 0">${ic('info','width:15px;height:15px')}${balMode()?'Ihr Guthaben vor Beginn des Budgetzeitraums plus Einnahmen im Zeitraum (z. B. Taschengeld) ist Ihr Budget. Verfügbar = aktueller Kontostand. Limiten pro Kategorie bleiben optional.':'Das Gesamtbudget ist die Summe der Budgets, die Sie pro Kategorie festlegen.'}</p></div>
     <div class="card set-sec" style="--i:2"><div class="card-head"><div><div class="card-title">Darstellung</div><div class="card-sub">Hell oder dunkel</div></div></div>
       <div class="seg-ctl seg-wide" role="group" aria-label="Farbschema"><button data-theme-set="dark" aria-pressed="${th==='dark'}">${ic('moon','width:15px;height:15px')}Dunkel</button><button data-theme-set="light" aria-pressed="${th==='light'}">${ic('sun','width:15px;height:15px')}Hell</button></div></div>
     <div class="card set-sec" style="--i:3"><div class="card-head"><div><div class="card-title">Daten &amp; Sicherung</div><div class="card-sub">${grp(S.tx.length,0)} Buchungen · ${S.cats.length} Kategorien · ${S.accounts.length} Konten · ${S.goals.length} Sparziele</div></div></div>
@@ -1648,7 +1677,7 @@ $('#importInput').addEventListener('change',e=>{const f=e.target.files&&e.target
 $('.modal-backdrop').addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
 function dayCheck(){const old=TODAY;tick();if(old!==TODAY){$('#kpis').dataset.built='';setHeader();buildNav();renderView(current,false)}}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')dayCheck()});setInterval(dayCheck,60000);
-setInterval(dayCheck,60000);
+document.addEventListener('change',e=>{const el=e.target;if(!el||!el.matches||!el.matches('[data-psel]'))return;S.periodStart=normPS(el.value);$('#kpis').dataset.built='';refresh();setHeader();toast(`Budgetzeitraum: ${curPeriod().labelY}`)});
 addEventListener('hashchange',()=>{const h=location.hash.slice(1);if(h!==current&&VIEWS.find(v=>v.id===h))go(h)});
 matchMedia('(prefers-color-scheme: light)').addEventListener?.('change',ev=>{let sv=null;try{sv=localStorage.getItem(THEME_KEY)}catch(_){}if(!sv&&!qTheme)setTheme(ev.matches?'light':'dark',false)});
 if(/^https?:$/.test(location.protocol)&&'serviceWorker' in navigator){

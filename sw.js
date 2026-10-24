@@ -1,5 +1,5 @@
 /* Vela Service Worker – offline-first */
-const VERSION = 'vela-v3.1.0';
+const VERSION = 'vela-v3.2.0';
 const SHELL = 'vela-shell-' + VERSION;
 const OCR = 'vela-ocr-v6.0.1';            /* separat versioniert: gross, ändert selten */
 const SHELL_FILES = [
