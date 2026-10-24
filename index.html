@@ -625,6 +625,24 @@ button.acc{width:100%;text-align:left;border-radius:12px;transition:background .
 }
 @media (max-width:420px){.more-tiles{grid-template-columns:1fr}}
 .grid>.card.span-12{grid-column:1/-1}
+/* v3.1: Kontostand als Budget */
+.summary-strip .s-sub{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--muted);margin-top:3px}
+.summary-strip .s-sub .i{color:var(--accent)}
+.summary-strip .s-note{flex-basis:100%;font-size:12.5px;color:var(--text2);padding-top:12px;border-top:1px solid var(--border);line-height:1.5}
+.bs-empty{display:flex;align-items:center;gap:14px;width:100%}
+.bs-empty .be-ico{flex:none;width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent)}
+.bs-empty>div{flex:1;min-width:0}.bs-empty b{display:block;font-size:14.5px}.bs-empty small{display:block;color:var(--muted);font-size:12.5px;margin-top:3px;line-height:1.5}
+.opt-limit{font-size:12px;color:var(--muted);text-decoration:underline dotted;text-underline-offset:3px;padding:2px 0}
+.opt-limit:hover{color:var(--accent)}
+.b-total{padding-bottom:12px;margin-bottom:4px;border-bottom:1px solid var(--border)}
+.b-total .b-sub{font-size:12px;color:var(--muted);margin-top:6px}
+@media (max-width:900px){
+  .bs-empty{flex-wrap:wrap}.bs-empty .btn{width:100%;justify-content:center}
+  .summary-strip .s-item{min-width:calc(50% - 14px)}
+  .seg-wide button{font-size:12.5px;padding:9px 6px}
+}
+.seg-wide button{white-space:normal;line-height:1.25;min-width:0;text-align:center}
+.seg-wide button .i{flex:none}
 
 </style>
 </head>
@@ -748,7 +766,7 @@ button.acc{width:100%;text-align:left;border-radius:12px;transition:background .
 (function(){
 "use strict";
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
-const KEY='vela.finance.v2', OLD_KEY='vela.finance.v1', THEME_KEY='vela.theme', SCHEMA=2;
+const APP_VERSION='3.1.0';const KEY='vela.finance.v2', OLD_KEY='vela.finance.v1', THEME_KEY='vela.theme', SCHEMA=2;
 const ICONS={
   grid:'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
   list:'<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
@@ -854,7 +872,7 @@ function parseAmt(v){
 let uidN=0;const uid=()=>Date.now().toString(36)+(uidN++).toString(36)+Math.random().toString(36).slice(2,7);
 function lastMonths(n){const out=[];for(let i=n-1;i>=0;i--){const d=new Date(NOW.getFullYear(),NOW.getMonth()-i,1);out.push({y:d.getFullYear(),m:d.getMonth(),key:`${d.getFullYear()}-${pad2(d.getMonth()+1)}`})}return out}
 
-function emptyData(){return{v:SCHEMA,userData:true,created:new Date().toISOString(),cats:[],tx:[],budgets:{},goals:[],accounts:[],merchantCats:{},onboard:0}}
+function emptyData(){return{v:SCHEMA,userData:true,created:new Date().toISOString(),cats:[],tx:[],budgets:{},goals:[],accounts:[],merchantCats:{},onboard:0,budgetMode:'balance'}}
 let S;
 let persistWarned=false,storageOk=true;const LOAD_WARN=[];
 function persist(d){try{localStorage.setItem(KEY,JSON.stringify(d||S));persistWarned=false;return true}catch(e){if(!persistWarned){persistWarned=true;const q=e&&(e.name==='QuotaExceededError'||e.code===22);setTimeout(()=>toast(q?'Speicher voll – Änderungen konnten nicht gesichert werden':'Speichern nicht möglich – Änderungen gelten nur bis zum Schliessen',null,'warn'),0)}return false}}
@@ -869,7 +887,7 @@ function sanitize(s){
   const budgets={};const sb=s.budgets&&typeof s.budgets==='object'?s.budgets:{};cats.forEach(c=>{const v=+sb[c.id];if(c.type!=='inc'&&Number.isFinite(v)&&v>0)budgets[c.id]=r2(v)});
   const goals=(Array.isArray(s.goals)?s.goals:[]).filter(g=>g&&typeof g==='object'&&String(g.name||'').trim()&&+g.target>0).map(g=>({id:String(g.id||uid()),name:String(g.name).slice(0,60),target:r2(+g.target),saved:Number.isFinite(+g.saved)&&+g.saved>=0?r2(+g.saved):0,due:isDate(g.due)?g.due:ymd(NOW.getFullYear()+1,NOW.getMonth(),1),color:HEX.test(g.color)?g.color:'#8b9bff',icon:ICONS[g.icon]?g.icon:'target'}));
   const merchantCats={};if(s.merchantCats&&typeof s.merchantCats==='object')for(const k in s.merchantCats)if(cids.has(s.merchantCats[k]))merchantCats[String(k).slice(0,40)]=s.merchantCats[k];
-  return{v:SCHEMA,userData:true,created:typeof s.created==='string'?s.created:new Date().toISOString(),cats,tx,budgets,goals,accounts,merchantCats,onboard:s.onboard?1:0}}
+  return{v:SCHEMA,userData:true,created:typeof s.created==='string'?s.created:new Date().toISOString(),cats,tx,budgets,goals,accounts,merchantCats,onboard:s.onboard?1:0,budgetMode:s.budgetMode==='cats'?'cats':'balance'}}
 /* Erkennt die früher automatisch erzeugten Beispieldaten (Version 1) */
 function isDemoData(o){return !!o&&typeof o==='object'&&!o.userData&&(!o.v||o.v<SCHEMA)}
 const MIGRATED=[];
@@ -900,6 +918,14 @@ const sortTx=()=>S.tx.sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:(a.id<b.id?1:
 function accBalance(a){return(Math.round(a.base*100)+S.tx.reduce((s,t)=>s+(t.acc===a.id?Math.round(t.amount*100):0),0))/100}
 /* Nettovermögen = Startsaldi aller Konten + alle Buchungen (auch solche ohne Konto) */
 function netWorth(){return(S.accounts.reduce((s,a)=>s+Math.round(a.base*100),0)+S.tx.reduce((s,t)=>s+Math.round(t.amount*100),0))/100}
+/* Monatsbudget aus dem Kontostand: Saldo am Monatsanfang + Einnahmen dieses Monats */
+function balanceBudget(){const first=CUR_KEY+'-01';let before=S.accounts.reduce((x,a)=>x+Math.round(a.base*100),0),inc=0,exp=0;
+  for(const t of S.tx){const v=Math.round(t.amount*100);if(!Number.isFinite(v))continue;if(t.date<first)before+=v;else if(t.date.slice(0,7)===CUR_KEY){if(v>0)inc+=v;else exp-=v}else before+=0}
+  const start=before/100,income=inc/100,spent=exp/100,budget=(before+inc)/100,avail=(before+inc-exp)/100;
+  const dim=new Date(NOW.getFullYear(),NOW.getMonth()+1,0).getDate(),daysLeft=dim-NOW.getDate()+1;
+  const p=budget>0?spent/budget*100:(spent>0?100:0);
+  return{start,income,spent,budget,avail,daysLeft,perDay:avail>0?Math.floor(avail/daysLeft*100)/100:0,p}}
+const balMode=()=>S.budgetMode!=='cats';
 const unassigned=()=>S.tx.reduce((s,t)=>s+(t.acc&&S.accounts.some(a=>a.id===t.acc)?0:Math.round(t.amount*100)),0)/100;
 
 const easeOut=t=>1-Math.pow(1-t,4);
@@ -1042,7 +1068,8 @@ function renderBudgetPreview(){
   const list=expCats().filter(k=>S.budgets[k]).map(k=>({k,...budgetInfo(k)})).sort((a,b)=>b.p-a.p).slice(0,5);
   const daysLeft=new Date(NOW.getFullYear(),NOW.getMonth()+1,0).getDate()-NOW.getDate();
   $('#budPrevSub').textContent=`Noch ${daysLeft} ${daysLeft===1?'Tag':'Tage'} im ${MONF[NOW.getMonth()]}`;
-  $('#budgetPreview').innerHTML=(list.length?'':`<div class="soft-empty">${expCats().length?'Noch keine Budgets festgelegt. Legen Sie unter «Budgets» Limiten pro Kategorie fest.':'Budgets legen Sie pro Kategorie fest. Erstellen Sie zuerst Ihre Ausgaben-Kategorien.'}</div>`)+list.map(x=>{const c=catOf(x.k);return `<div class="b-row"><div class="b-line"><div class="b-name"><span class="dot" style="background:${c.color}1f;color:${c.color}">${ic(c.icon)}</span>${esc(c.label)}</div><div class="b-amt num"><b>${chf(x.spent)}</b> / ${grp(x.b,0)}</div></div><div class="bar" role="progressbar" aria-valuenow="${Math.round(x.p)}" aria-valuemin="0" aria-valuemax="100" aria-label="Budget ${esc(c.label)}"><span data-w="${Math.min(100,x.p)}" style="${barFill(statusColor(x.status),c.color)}"></span></div></div>`}).join('');
+  let head='';if(balMode()&&S.accounts.length){const b=balanceBudget();const p=Math.min(100,Math.max(0,b.p));const col=b.avail<0||b.p>100?'var(--danger)':b.p>85?'var(--warn)':'var(--accent)';head=`<div class="b-row b-total"><div class="b-line"><div class="b-name"><span class="dot" style="background:var(--accent-soft);color:var(--accent)">${ic('wallet')}</span>Monatsbudget</div><div class="b-amt num"><b>${chf(b.spent)}</b> / ${grp(b.budget,0)}</div></div><div class="bar" role="progressbar" aria-valuenow="${Math.round(p)}" aria-valuemin="0" aria-valuemax="100" aria-label="Monatsbudget"><span data-w="${p}" style="background:${col}"></span></div><div class="b-sub">${b.avail<0?'Kontostand im Minus':`${chf(b.avail)} verfügbar · ${chf(b.perDay)} pro Tag`}</div></div>`}
+  $('#budgetPreview').innerHTML=head+(list.length||head?'':`<div class="soft-empty">${expCats().length?'Noch keine Budgets festgelegt. Legen Sie unter «Budgets» Limiten pro Kategorie fest.':'Budgets legen Sie pro Kategorie fest. Erstellen Sie zuerst Ihre Ausgaben-Kategorien.'}</div>`)+list.map(x=>{const c=catOf(x.k);return `<div class="b-row"><div class="b-line"><div class="b-name"><span class="dot" style="background:${c.color}1f;color:${c.color}">${ic(c.icon)}</span>${esc(c.label)}</div><div class="b-amt num"><b>${chf(x.spent)}</b> / ${grp(x.b,0)}</div></div><div class="bar" role="progressbar" aria-valuenow="${Math.round(x.p)}" aria-valuemin="0" aria-valuemax="100" aria-label="Budget ${esc(c.label)}"><span data-w="${Math.min(100,x.p)}" style="${barFill(statusColor(x.status),c.color)}"></span></div></div>`}).join('');
   animateBars($('#budgetPreview'));
 }
 let ringN=0;
@@ -1067,19 +1094,27 @@ function renderTx(){
 }
 
 function renderBudgets(){
-  const dim=new Date(NOW.getFullYear(),NOW.getMonth()+1,0).getDate(),day=NOW.getDate();
-  let tb=0,ts=0;expCats().forEach(k=>{const x=budgetInfo(k);tb+=x.b;ts+=x.spent});
-  const p=tb?ts/tb*100:0;
-  $('#budgetSummary').innerHTML=`${ring(p,p>100?'#ff6b81':'#8b9bff',84,8)}<div class="s-item"><div class="l">Ausgegeben</div><div class="v num">${chf(ts)}</div></div><div class="s-item"><div class="l">Gesamtbudget</div><div class="v num">${chf(tb)}</div></div><div class="s-item"><div class="l">Verfügbar</div><div class="v num" style="color:${tb-ts>=0?'var(--mint)':'var(--danger)'}">${chf(tb-ts)}</div></div><div class="s-item"><div class="l">Monat verstrichen</div><div class="v num">${Math.round(day/dim*100)} %</div></div>`;
-  animateRings($('#budgetSummary'));
+  const dim=new Date(NOW.getFullYear(),NOW.getMonth()+1,0).getDate(),day=NOW.getDate();const bal=balMode();
+  const sumEl=$('#budgetSummary');
+  if(bal){
+    if(!S.accounts.length){sumEl.innerHTML=`<div class="bs-empty"><span class="be-ico">${ic('wallet')}</span><div><b>Monatsbudget aus Ihrem Kontostand</b><small>Fügen Sie ein Konto mit Ihrem aktuellen Guthaben hinzu – Vela nimmt den Kontostand dann automatisch als Monatsbudget.</small></div><button class="btn btn-primary btn-sm" data-action="newacc">${ic('plus','width:15px;height:15px')}Konto hinzufügen</button></div>`}
+    else{const b=balanceBudget();const neg=b.avail<0;const col=neg||b.p>100?'#ff6b81':b.p>85?'#ffb547':'#8b9bff';
+      sumEl.innerHTML=`${ring(Math.min(100,Math.max(0,b.p)),col,84,8)}<div class="s-item"><div class="l">Ausgegeben</div><div class="v num">${chf(b.spent)}</div></div><div class="s-item"><div class="l">Gesamtbudget</div><div class="v num"${b.budget<0?' style="color:var(--danger)"':''}>${chf(b.budget)}</div><div class="s-sub">${ic('wallet','width:12px;height:12px')}Automatisch aus Ihrem Kontostand</div></div><div class="s-item"><div class="l">Verfügbar</div><div class="v num" style="color:${neg?'var(--danger)':'var(--mint)'}">${chf(b.avail)}</div></div><div class="s-item"><div class="l">Pro Tag verfügbar</div><div class="v num">${neg||b.avail===0?'–':chf(b.perDay)}</div><div class="s-sub">${neg?'Kontostand im Minus':`noch ${b.daysLeft} ${b.daysLeft===1?'Tag':'Tage'} im ${MONF[NOW.getMonth()]}`}</div></div>
+      <div class="s-note">Kontostand am 1. ${MONF[NOW.getMonth()]} ${chf(b.start)}${b.income?` + Einnahmen ${chf(b.income)}`:''} = Budget ${chf(b.budget)}${neg?' · Ihr Kontostand ist negativ – Ausgaben übersteigen Ihr Guthaben.':''}</div>`}
+  }else{
+    let tb=0,ts=0;expCats().forEach(k=>{const x=budgetInfo(k);tb+=x.b;ts+=x.spent});
+    const p=tb?ts/tb*100:0;
+    sumEl.innerHTML=`${ring(p,p>100?'#ff6b81':'#8b9bff',84,8)}<div class="s-item"><div class="l">Ausgegeben</div><div class="v num">${chf(ts)}</div></div><div class="s-item"><div class="l">Gesamtbudget</div><div class="v num">${chf(tb)}</div><div class="s-sub">Summe der Kategorie-Budgets</div></div><div class="s-item"><div class="l">Verfügbar</div><div class="v num" style="color:${tb-ts>=0?'var(--mint)':'var(--danger)'}">${chf(tb-ts)}</div></div><div class="s-item"><div class="l">Monat verstrichen</div><div class="v num">${Math.round(day/dim*100)} %</div></div>`;
+  }
+  animateRings(sumEl);
   const ks=expCats();
-  if(!ks.length){$('#budgetSummary').closest('.card').style.display='none';$('#budgetsGrid').innerHTML=`<div class="card span-12 big-empty"><div class="be-ico">${ic('pie')}</div><h3>Budgets pro Kategorie</h3><p>Budgets basieren auf Ihren eigenen Ausgaben-Kategorien. Legen Sie zuerst Kategorien wie «Essen», «Wohnen» oder «Freizeit» an.</p><button class="btn btn-primary" data-action="newcat">${ic('plus','width:16px;height:16px')}Kategorie anlegen</button></div>`;return}
+  if(!ks.length){$('#budgetSummary').closest('.card').style.display=bal?'':'none';$('#budgetsGrid').innerHTML=`<div class="card span-12 big-empty"><div class="be-ico">${ic('pie')}</div><h3>Budgets pro Kategorie</h3><p>${bal?'Optional: Mit eigenen Ausgaben-Kategorien wie «Essen» oder «Freizeit» können Sie zusätzlich Limiten pro Kategorie festlegen.':'Budgets basieren auf Ihren eigenen Ausgaben-Kategorien. Legen Sie zuerst Kategorien wie «Essen», «Wohnen» oder «Freizeit» an.'}</p><button class="btn btn-primary" data-action="newcat">${ic('plus','width:16px;height:16px')}Kategorie anlegen</button></div>`;return}
   $('#budgetSummary').closest('.card').style.display='';
   $('#budgetsGrid').innerHTML=ks.map((k,i)=>{const x=budgetInfo(k),c=catOf(k);const fc=c.fixed?x.spent:x.spent/day*dim;const rest=x.b-x.spent;
     return `<div class="card budget-card span-3" style="--i:${i+1}"><div class="card-head" style="margin-bottom:0"><div class="b-name"><span class="dot" style="background:${c.color}1f;color:${c.color};width:36px;height:36px;border-radius:11px">${ic(c.icon)}</span><span class="b-lbl">${esc(c.label)}</span></div><button class="edit-btn" data-editbudget="${esc(k)}" aria-label="Budget ${esc(c.label)} bearbeiten">${ic('edit','width:16px;height:16px')}</button></div>
-    <div class="b-big num">${chf(x.spent)}</div><div class="b-of num">${x.b?`von ${chf(x.b)} · ${Math.round(x.p)} %`:'Tippen Sie auf den Stift, um ein Budget festzulegen'}</div>
+    <div class="b-big num">${chf(x.spent)}</div><div class="b-of num">${x.b?`von ${chf(x.b)} · ${Math.round(x.p)} %`:bal?`<button class="opt-limit" data-editbudget="${esc(k)}">Optional: Limit festlegen</button>`:'Tippen Sie auf den Stift, um ein Budget festzulegen'}</div>
     <div class="bar" role="progressbar" aria-valuenow="${Math.round(x.p)}" aria-valuemin="0" aria-valuemax="100" aria-label="Budget ${esc(c.label)}"><span data-w="${Math.min(100,x.p)}" style="${barFill(statusColor(x.status),c.color)}"></span></div>
-    <div class="b-foot"><span class="status-${x.status}"><b>${x.status==='none'?'Kein Budget festgelegt':rest>=0?'Noch '+chf(rest)+' verfügbar':chf(-rest)+' über Budget'}</b></span></div>
+    <div class="b-foot"><span class="status-${x.status}"><b>${x.status==='none'?(bal?'Ohne Limit · diesen Monat':'Kein Budget festgelegt'):rest>=0?'Noch '+chf(rest)+' verfügbar':chf(-rest)+' über Budget'}</b></span></div>
     <div class="b-foot" style="margin-top:6px"><span>Prognose Monatsende</span><b class="num" style="color:${x.b&&fc>x.b?'var(--warn)':'var(--text2)'}">${chf(fc)}</b></div></div>`}).join('')+`<button class="card add-card span-3" style="--i:${ks.length+1}" data-action="newcat"><span class="plus">${ic('plus','width:24px;height:24px')}</span>Neue Kategorie</button>`;
   animateBars($('#budgetsGrid'));
 }
@@ -1533,6 +1568,9 @@ function renderSettings(){
     </div>
     <div class="card set-sec" style="--i:1"><div class="card-head"><div><div class="card-title">Konten</div><div class="card-sub">Startsaldo und Zuordnung Ihrer Buchungen</div></div><button class="btn btn-secondary btn-sm" data-action="newacc">${ic('plus','width:15px;height:15px')}Konto</button></div>
       ${S.accounts.length?`<div class="set-list">${S.accounts.map(a=>`<button class="acc" data-editacc="${esc(a.id)}"><div class="tx-ico" style="background:${a.color}1f;color:${a.color}">${ic(a.icon)}</div><div class="tx-main"><div class="tx-name">${esc(a.name)}</div><div class="tx-meta">${esc(a.bank||'Konto')} · Start ${chf(a.base)}</div></div><div class="tx-amt num">${chf(accBalance(a))}</div><span class="acc-edit">${ic('edit','width:15px;height:15px')}</span></button>`).join('')}<div class="acc-total"><span>Nettovermögen</span><span class="v num">${chf(netWorth())}</span></div></div>`:`<div class="soft-empty">Noch keine Konten. Fügen Sie z. B. Ihr Privat- und Sparkonto mit dem aktuellen Saldo hinzu.</div>`}</div>
+    <div class="card set-sec" style="--i:2"><div class="card-head"><div><div class="card-title">Monatsbudget</div><div class="card-sub">Wie das Gesamtbudget berechnet wird</div></div></div>
+      <div class="seg-ctl seg-wide" role="group" aria-label="Budget-Modus"><button data-bmode="balance" aria-pressed="${balMode()}">${ic('wallet','width:15px;height:15px')}Kontostand als Budget</button><button data-bmode="cats" aria-pressed="${!balMode()}">${ic('pie','width:15px;height:15px')}Summe der Kategorie-Budgets</button></div>
+      <p class="set-note" style="margin:12px 0 0">${ic('info','width:15px;height:15px')}${balMode()?'Ihr Guthaben am Monatsanfang plus Einnahmen dieses Monats (z. B. Taschengeld) ist Ihr Monatsbudget. Verfügbar = aktueller Kontostand. Limiten pro Kategorie bleiben optional.':'Das Gesamtbudget ist die Summe der Budgets, die Sie pro Kategorie festlegen.'}</p></div>
     <div class="card set-sec" style="--i:2"><div class="card-head"><div><div class="card-title">Darstellung</div><div class="card-sub">Hell oder dunkel</div></div></div>
       <div class="seg-ctl seg-wide" role="group" aria-label="Farbschema"><button data-theme-set="dark" aria-pressed="${th==='dark'}">${ic('moon','width:15px;height:15px')}Dunkel</button><button data-theme-set="light" aria-pressed="${th==='light'}">${ic('sun','width:15px;height:15px')}Hell</button></div></div>
     <div class="card set-sec" style="--i:3"><div class="card-head"><div><div class="card-title">Daten &amp; Sicherung</div><div class="card-sub">${grp(S.tx.length,0)} Buchungen · ${S.cats.length} Kategorien · ${S.accounts.length} Konten · ${S.goals.length} Sparziele</div></div></div>
@@ -1540,7 +1578,7 @@ function renderSettings(){
       <div class="set-actions"><button class="btn btn-secondary" data-action="export">${ic('download','width:16px;height:16px')}Sicherung exportieren</button><button class="btn btn-secondary" data-action="import">${ic('upload','width:16px;height:16px')}Sicherung importieren</button></div></div>
     <div class="card set-sec danger-zone" style="--i:4"><div class="card-head"><div><div class="card-title">Gefahrenzone</div><div class="card-sub">Nicht rückgängig zu machen</div></div></div>
       <div class="dz-row"><div><b>Alle Daten löschen</b><small>Entfernt Buchungen, Kategorien, Konten, Budgets, Sparziele und Belegfotos von diesem Gerät.</small></div><button class="btn btn-danger" data-action="wipe">${ic('trash','width:16px;height:16px')}Alle Daten löschen</button></div></div>
-    <div class="set-foot">Vela · Version 3.0 · Speicher-Schema ${SCHEMA}</div>`}
+    <div class="set-foot">Vela · Version ${APP_VERSION} · Speicher-Schema ${SCHEMA}</div>`}
 function openWipe(){
   openModal(`${mHead('Alle Daten löschen?')}<form id="wf" novalidate><div class="wipe-warn">${ic('trash')}<p>Damit werden <b>sämtliche</b> Buchungen (${grp(S.tx.length,0)}), Kategorien (${S.cats.length}), Konten (${S.accounts.length}), Budgets, Sparziele (${S.goals.length}) und Belegfotos endgültig von diesem Gerät entfernt.</p></div>
     <div class="field"><label for="wConf">Zur Bestätigung <b>LÖSCHEN</b> eingeben</label><input class="input" id="wConf" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="LÖSCHEN"><div class="err"></div></div>
@@ -1553,7 +1591,7 @@ async function importData(file){if(!file)return;try{if(file.size>20e6)throw new 
   openConfirm('Sicherung importieren?',`Die Sicherung enthält ${grp(d.tx.length,0)} Buchungen, ${d.cats.length} Kategorien und ${d.accounts.length} Konten. Ihre aktuellen Daten auf diesem Gerät werden dadurch ersetzt.`,'Importieren',()=>{S=d;S.onboard=1;syncCats();persist();$('#kpis').dataset.built='';buildNav();renderView(current,true);toast('Sicherung importiert')})}
   catch(e){toast('Diese Datei ist keine gültige Vela-Sicherung',null,'warn')}}
 
-function toast(msg,action,kind){const el=document.createElement('div');el.className='toast'+(kind?' '+kind:'');el.setAttribute('role','status');msg=String(msg);if(msg.length>140)msg=msg.slice(0,137)+'…';el.innerHTML=`<span class="t-ico">${ic(kind==='warn'?'info':'check')}</span><span>${esc(msg)}</span>${action?`<button type="button">${action.label}</button>`:''}`;$('#toasts').appendChild(el);{const live=$$('#toasts .toast:not(.out)');if(live.length>3)live[0]._kill(true)}let done=false;const kill=(silent)=>{if(done)return;done=true;clearTimeout(tm);if(!silent&&action&&!el._undone&&action.onExpire)action.onExpire();el.classList.add('out');setTimeout(()=>el.remove(),350)};el._kill=kill;if(action)el.querySelector('button').onclick=()=>{el._undone=true;action.fn();kill()};const tm=setTimeout(kill,action?6000:kind==='warn'?5000:3200)}
+function toast(msg,action,kind){const el=document.createElement('div');el.className='toast'+(kind?' '+kind:'');el.setAttribute('role','status');msg=String(msg);if(msg.length>140)msg=msg.slice(0,137)+'…';el.innerHTML=`<span class="t-ico">${ic(kind==='warn'?'info':'check')}</span><span>${esc(msg)}</span>${action?`<button type="button">${action.label}</button>`:''}`;$('#toasts').appendChild(el);{const live=$$('#toasts .toast:not(.out)');if(live.length>3)live[0]._kill(true)}let done=false;const kill=(silent)=>{if(done)return;done=true;clearTimeout(tm);if(!silent&&action&&!el._undone&&action.onExpire)action.onExpire();el.classList.add('out');setTimeout(()=>el.remove(),350)};el._kill=kill;if(action)el.querySelector('button').onclick=()=>{el._undone=true;action.fn();kill()};const tm=kind==='sticky'?0:setTimeout(kill,action?6000:kind==='warn'?5000:3200)}
 function clearToasts(){$$('#toasts .toast').forEach(t=>{t._undone=true;t._kill&&t._kill(true)})}
 function setTheme(t,save=true){if(t!=='dark'&&t!=='light')t='dark';document.documentElement.setAttribute('data-theme',t);$$('[data-theme-set]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.themeSet===t)));$('#mThemeBtn').innerHTML=ic(t==='dark'?'sun':'moon');$$('meta[name=theme-color]').forEach(mt=>mt.setAttribute('content',t==='dark'?'#070a13':'#f3f5fa'));if(save)try{localStorage.setItem(THEME_KEY,t)}catch(e){}}
 let savedTheme=null;try{savedTheme=localStorage.getItem(THEME_KEY)}catch(e){}
@@ -1561,11 +1599,12 @@ const qTheme=new URLSearchParams(location.search).get('theme');
 setTheme(qTheme||savedTheme||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'),!qTheme);
 
 document.addEventListener('click',e=>{
-  const t=e.target.closest('[data-receipt],[data-goto],[data-action],[data-close],[data-del],[data-editbudget],[data-deposit],[data-delgoal],[data-editcat],[data-delcat],[data-editacc],[data-quickcat],[data-theme-set],[data-range],[data-cat],[data-type]');if(!t)return;
+  const t=e.target.closest('[data-receipt],[data-goto],[data-action],[data-close],[data-del],[data-editbudget],[data-deposit],[data-delgoal],[data-editcat],[data-delcat],[data-editacc],[data-quickcat],[data-bmode],[data-theme-set],[data-range],[data-cat],[data-type]');if(!t)return;
   if(t.dataset.receipt){e.stopPropagation();openReceipt(t.dataset.receipt,t.dataset.desc);return}
   if(t.hasAttribute('data-close')){closeModal();return}
   if(t.dataset.goto){go(t.dataset.goto);return}
   if(t.dataset.themeSet){setTheme(t.dataset.themeSet);if(current==='settings')renderSettings();return}
+  if(t.dataset.bmode){S.budgetMode=t.dataset.bmode==='cats'?'cats':'balance';refresh();toast(S.budgetMode==='cats'?'Gesamtbudget = Summe der Kategorie-Budgets':'Gesamtbudget = Ihr Kontostand');return}
   if(t.dataset.editcat)return openCatModal(t.dataset.editcat);
   if(t.dataset.delcat)return openDelCat(t.dataset.delcat);
   if(t.dataset.editacc)return openAccModal(t.dataset.editacc);
@@ -1608,11 +1647,20 @@ $('#importInput').addEventListener('change',e=>{const f=e.target.files&&e.target
 ['camInput','picInput'].forEach(id=>$('#'+id).addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];e.target.value='';if(f)startScan(f)}));
 $('.modal-backdrop').addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
 function dayCheck(){const old=TODAY;tick();if(old!==TODAY){$('#kpis').dataset.built='';setHeader();buildNav();renderView(current,false)}}
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')dayCheck()});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')dayCheck()});setInterval(dayCheck,60000);
 setInterval(dayCheck,60000);
 addEventListener('hashchange',()=>{const h=location.hash.slice(1);if(h!==current&&VIEWS.find(v=>v.id===h))go(h)});
 matchMedia('(prefers-color-scheme: light)').addEventListener?.('change',ev=>{let sv=null;try{sv=localStorage.getItem(THEME_KEY)}catch(_){}if(!sv&&!qTheme)setTheme(ev.matches?'light':'dark',false)});
-if(/^https?:$/.test(location.protocol)&&'serviceWorker' in navigator){addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(err=>console.info('Service Worker nicht registriert',err))})}
+if(/^https?:$/.test(location.protocol)&&'serviceWorker' in navigator){
+  const hadCtrl=!!navigator.serviceWorker.controller;let reloading=false,shown=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{if(!hadCtrl||reloading)return;
+    const busy=$('#modalRoot').classList.contains('open');
+    if(performance.now()<10000&&!busy){reloading=true;location.reload();return}
+    if(shown)return;shown=true;toast('Neue Version verfügbar',{label:'Neu laden',fn:()=>{reloading=true;location.reload()}},'sticky')});
+  addEventListener('load',()=>{navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(reg=>{
+    const check=()=>reg.update().catch(()=>{});
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')check()});setInterval(check,30*60*1000);
+  }).catch(err=>console.info('Service Worker nicht registriert',err))})}
 
 
 buildNav();

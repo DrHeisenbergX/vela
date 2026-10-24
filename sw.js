@@ -1,5 +1,5 @@
 /* Vela Service Worker – offline-first */
-const VERSION = 'vela-v3.0.0';
+const VERSION = 'vela-v3.1.0';
 const SHELL = 'vela-shell-' + VERSION;
 const OCR = 'vela-ocr-v6.0.1';            /* separat versioniert: gross, ändert selten */
 const SHELL_FILES = [
@@ -18,7 +18,7 @@ const OCR_FILES = [
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const shell = await caches.open(SHELL);
-    await shell.addAll(SHELL_FILES);
+    await shell.addAll(SHELL_FILES.map((u) => new Request(u, { cache: 'reload' })));  /* HTTP-Cache umgehen, damit die neue Version geladen wird */
     /* OCR-Dateien best effort: ein Fehler blockiert die Installation nicht */
     const ocr = await caches.open(OCR);
     await Promise.allSettled(OCR_FILES.map(async (u) => {
