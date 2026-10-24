@@ -650,6 +650,7 @@ button.acc{width:100%;text-align:left;border-radius:12px;transition:background .
 .ps-info{margin:10px 0 0}
 @media(max-width:560px){.ps-row select.input{width:100%}}
 .kpi-lbl{display:flex;flex-direction:column;line-height:1.2;min-width:0}.kpi-lbl small{font-size:11.5px;opacity:.72;white-space:nowrap;margin-top:2px;font-variant-numeric:tabular-nums}
+.ws-row{margin-top:14px}
 
 </style>
 </head>
@@ -773,7 +774,7 @@ button.acc{width:100%;text-align:left;border-radius:12px;transition:background .
 (function(){
 "use strict";
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
-const APP_VERSION='3.2.0';const KEY='vela.finance.v2', OLD_KEY='vela.finance.v1', THEME_KEY='vela.theme', SCHEMA=2;
+const APP_VERSION='3.3.0';const KEY='vela.finance.v2', OLD_KEY='vela.finance.v1', THEME_KEY='vela.theme', SCHEMA=2;
 const ICONS={
   calendar:'<rect x="3" y="4.5" width="18" height="16.5" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/>',
   grid:'<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
@@ -882,25 +883,32 @@ let uidN=0;const uid=()=>Date.now().toString(36)+(uidN++).toString(36)+Math.rand
 function normPS(v){if(v==='last')return 'last';const n=Math.round(+v);return Number.isFinite(n)&&n>=1&&n<=28?n:25}
 const dimOf=(y,m)=>new Date(y,m+1,0).getDate();
 const psDay=(y,m)=>{const D=S&&S.periodStart!=null?S.periodStart:25;return D==='last'?dimOf(y,m):Math.min(D,dimOf(y,m))};
+const wShift=()=>!S||S.weekendShift!==false;
+/* Effektiver Zahltag im Monat (y,m): konfigurierter Tag, bei Sa/So auf den Freitag davor vorgezogen */
+function effStart(y,m){const t=new Date(y,m,1);y=t.getFullYear();m=t.getMonth();const d=new Date(y,m,psDay(y,m));if(wShift()){const w=d.getDay();if(w===6)d.setDate(d.getDate()-1);else if(w===0)d.setDate(d.getDate()-2)}return d}
 const dkey=d=>ymd(d.getFullYear(),d.getMonth(),d.getDate());
 const dmy=s=>{const[y,m,d]=s.split('-');return `${d}.${m}.`};
-/* Zeitraum mit Startmonat (y,m) */
-function periodAt(y,m){const a=new Date(y,m,psDay(y,m));const ny=a.getFullYear(),nm=a.getMonth()+1;const n=new Date(ny,nm,psDay(new Date(ny,nm,1).getFullYear(),new Date(ny,nm,1).getMonth()));const e=new Date(n.getFullYear(),n.getMonth(),n.getDate()-1);
-  const start=dkey(a),end=dkey(e),next=dkey(n);const len=Math.round((Date.UTC(n.getFullYear(),n.getMonth(),n.getDate())-Date.UTC(a.getFullYear(),a.getMonth(),a.getDate()))/864e5);
-  return{start,end,next,len,y:e.getFullYear(),m:e.getMonth(),sy:a.getFullYear(),sm:a.getMonth(),key:start,label:`${dmy(start)}–${dmy(end)}`,labelY:`${dmy(start)}–${dmy(end)}${e.getFullYear()}`}}
+const uday=d=>Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())/864e5;
+/* Zeitraum, der am Zahltag des Monats (y,m) beginnt und am Tag vor dem nächsten Zahltag endet */
+function periodAt(y,m){const a=effStart(y,m),n=effStart(y,m+1);const e=new Date(n.getFullYear(),n.getMonth(),n.getDate()-1);
+  const start=dkey(a),end=dkey(e),next=dkey(n),len=Math.round(uday(n)-uday(a));const nm=new Date(y,m+1,1);
+  return{start,end,next,len,y:e.getFullYear(),m:e.getMonth(),nominal:psDay(nm.getFullYear(),nm.getMonth()),nomNext:dkey(new Date(nm.getFullYear(),nm.getMonth(),psDay(nm.getFullYear(),nm.getMonth()))),key:start,label:`${dmy(start)}–${dmy(end)}`,labelY:`${dmy(start)}–${dmy(end)}${e.getFullYear()}`}}
 /* Zeitraum, der das Datum d enthält; off = Anzahl Zeiträume zurück */
-function periodOf(d,off=0){d=d||NOW;let y=d.getFullYear(),m=d.getMonth();if(d.getDate()<psDay(y,m))m--;const t=new Date(y,m-off,1);return periodAt(t.getFullYear(),t.getMonth())}
+function periodOf(d,off=0){d=d||NOW;const k=dkey(d);let y=d.getFullYear(),m=d.getMonth();
+  if(k<dkey(effStart(y,m)))m--;else if(k>=dkey(effStart(y,m+1)))m++;
+  const t=new Date(y,m-off,1);return periodAt(t.getFullYear(),t.getMonth())}
 const curPeriod=()=>periodOf(NOW);
 const isCalMonth=()=>S.periodStart===1;
 const periodShort=pr=>isCalMonth()?MON[pr.m]:pr.label;
 const prevWord=()=>isCalMonth()?'Vormonat':'Vorperiode';
 function lastPeriods(n){const out=[];for(let i=n-1;i>=0;i--)out.push(periodOf(NOW,i));return out}
 function daysLeftIn(pr){const t=parseD(TODAY),n=parseD(pr.next);return Math.max(1,Math.round((Date.UTC(n.getFullYear(),n.getMonth(),n.getDate())-Date.UTC(t.getFullYear(),t.getMonth(),t.getDate()))/864e5))}
-const nextLong=pr=>{const d=parseD(pr.next);return `${d.getDate()}. ${MONF[d.getMonth()]}`};
+const untilTxt=pr=>pr.next===pr.nomNext?'bis zum '+nextLong(pr):'bis '+nextLong(pr);
+const nextLong=pr=>{const d=parseD(pr.next);const base=`${d.getDate()}. ${MONF[d.getMonth()]}`;if(pr.next===pr.nomNext)return base;const nd=parseD(pr.nomNext);return `${WD[d.getDay()]}, ${base} (${nd.getDate()}. fällt auf ${WD[nd.getDay()]})`};
 const daysTxt=n=>`${n} ${n===1?'Tag':'Tage'}`;
 function lastMonths(n){const out=[];for(let i=n-1;i>=0;i--){const d=new Date(NOW.getFullYear(),NOW.getMonth()-i,1);out.push({y:d.getFullYear(),m:d.getMonth(),key:`${d.getFullYear()}-${pad2(d.getMonth()+1)}`})}return out}
 
-function emptyData(){return{v:SCHEMA,userData:true,created:new Date().toISOString(),cats:[],tx:[],budgets:{},goals:[],accounts:[],merchantCats:{},onboard:0,budgetMode:'balance',periodStart:25}}
+function emptyData(){return{v:SCHEMA,userData:true,created:new Date().toISOString(),cats:[],tx:[],budgets:{},goals:[],accounts:[],merchantCats:{},onboard:0,budgetMode:'balance',periodStart:25,weekendShift:true}}
 let S;
 let persistWarned=false,storageOk=true;const LOAD_WARN=[];
 function persist(d){try{localStorage.setItem(KEY,JSON.stringify(d||S));persistWarned=false;return true}catch(e){if(!persistWarned){persistWarned=true;const q=e&&(e.name==='QuotaExceededError'||e.code===22);setTimeout(()=>toast(q?'Speicher voll – Änderungen konnten nicht gesichert werden':'Speichern nicht möglich – Änderungen gelten nur bis zum Schliessen',null,'warn'),0)}return false}}
@@ -915,7 +923,7 @@ function sanitize(s){
   const budgets={};const sb=s.budgets&&typeof s.budgets==='object'?s.budgets:{};cats.forEach(c=>{const v=+sb[c.id];if(c.type!=='inc'&&Number.isFinite(v)&&v>0)budgets[c.id]=r2(v)});
   const goals=(Array.isArray(s.goals)?s.goals:[]).filter(g=>g&&typeof g==='object'&&String(g.name||'').trim()&&+g.target>0).map(g=>({id:String(g.id||uid()),name:String(g.name).slice(0,60),target:r2(+g.target),saved:Number.isFinite(+g.saved)&&+g.saved>=0?r2(+g.saved):0,due:isDate(g.due)?g.due:ymd(NOW.getFullYear()+1,NOW.getMonth(),1),color:HEX.test(g.color)?g.color:'#8b9bff',icon:ICONS[g.icon]?g.icon:'target'}));
   const merchantCats={};if(s.merchantCats&&typeof s.merchantCats==='object')for(const k in s.merchantCats)if(cids.has(s.merchantCats[k]))merchantCats[String(k).slice(0,40)]=s.merchantCats[k];
-  return{v:SCHEMA,userData:true,created:typeof s.created==='string'?s.created:new Date().toISOString(),cats,tx,budgets,goals,accounts,merchantCats,onboard:s.onboard?1:0,budgetMode:s.budgetMode==='cats'?'cats':'balance',periodStart:normPS(s.periodStart)}}
+  return{v:SCHEMA,userData:true,created:typeof s.created==='string'?s.created:new Date().toISOString(),cats,tx,budgets,goals,accounts,merchantCats,onboard:s.onboard?1:0,budgetMode:s.budgetMode==='cats'?'cats':'balance',periodStart:normPS(s.periodStart),weekendShift:s.weekendShift!==false}}
 /* Erkennt die früher automatisch erzeugten Beispieldaten (Version 1) */
 function isDemoData(o){return !!o&&typeof o==='object'&&!o.userData&&(!o.v||o.v<SCHEMA)}
 const MIGRATED=[];
@@ -1094,7 +1102,7 @@ function animateBars(root){requestAnimationFrame(()=>requestAnimationFrame(()=>$
 function barFill(col,base){return col?`background:${col}`:`background:linear-gradient(90deg,${base}99,${base})`}
 function renderBudgetPreview(){
   const list=expCats().filter(k=>S.budgets[k]).map(k=>({k,...budgetInfo(k)})).sort((a,b)=>b.p-a.p).slice(0,5);
-  {const pr=curPeriod(),dl=daysLeftIn(pr);$('#budPrevSub').textContent=`Noch ${daysTxt(dl)} bis zum ${nextLong(pr)}`}
+  {const pr=curPeriod(),dl=daysLeftIn(pr);$('#budPrevSub').textContent=`Noch ${daysTxt(dl)} ${untilTxt(pr)}`}
   let head='';if(balMode()&&S.accounts.length){const b=balanceBudget();const p=Math.min(100,Math.max(0,b.p));const col=b.avail<0||b.p>100?'var(--danger)':b.p>85?'var(--warn)':'var(--accent)';head=`<div class="b-row b-total"><div class="b-line"><div class="b-name"><span class="dot" style="background:var(--accent-soft);color:var(--accent)">${ic('wallet')}</span>Monatsbudget</div><div class="b-amt num"><b>${chf(b.spent)}</b> / ${grp(b.budget,0)}</div></div><div class="bar" role="progressbar" aria-valuenow="${Math.round(p)}" aria-valuemin="0" aria-valuemax="100" aria-label="Monatsbudget"><span data-w="${p}" style="background:${col}"></span></div><div class="b-sub">${b.avail<0?'Kontostand im Minus':`${chf(b.avail)} verfügbar · ${chf(b.perDay)} pro Tag`}</div></div>`}
   $('#budgetPreview').innerHTML=head+(list.length||head?'':`<div class="soft-empty">${expCats().length?'Noch keine Budgets festgelegt. Legen Sie unter «Budgets» Limiten pro Kategorie fest.':'Budgets legen Sie pro Kategorie fest. Erstellen Sie zuerst Ihre Ausgaben-Kategorien.'}</div>`)+list.map(x=>{const c=catOf(x.k);return `<div class="b-row"><div class="b-line"><div class="b-name"><span class="dot" style="background:${c.color}1f;color:${c.color}">${ic(c.icon)}</span>${esc(c.label)}</div><div class="b-amt num"><b>${chf(x.spent)}</b> / ${grp(x.b,0)}</div></div><div class="bar" role="progressbar" aria-valuenow="${Math.round(x.p)}" aria-valuemin="0" aria-valuemax="100" aria-label="Budget ${esc(c.label)}"><span data-w="${Math.min(100,x.p)}" style="${barFill(statusColor(x.status),c.color)}"></span></div></div>`}).join('');
   animateBars($('#budgetPreview'));
@@ -1126,7 +1134,7 @@ function renderBudgets(){
   if(bal){
     if(!S.accounts.length){sumEl.innerHTML=`<div class="bs-empty"><span class="be-ico">${ic('wallet')}</span><div><b>Monatsbudget aus Ihrem Kontostand</b><small>Fügen Sie ein Konto mit Ihrem aktuellen Guthaben hinzu – Vela nimmt den Kontostand dann automatisch als Monatsbudget.</small></div><button class="btn btn-primary btn-sm" data-action="newacc">${ic('plus','width:15px;height:15px')}Konto hinzufügen</button></div>`}
     else{const b=balanceBudget();const neg=b.avail<0;const col=neg||b.p>100?'#ff6b81':b.p>85?'#ffb547':'#8b9bff';
-      sumEl.innerHTML=`${ring(Math.min(100,Math.max(0,b.p)),col,84,8)}<div class="s-item"><div class="l">Ausgegeben</div><div class="v num">${chf(b.spent)}</div></div><div class="s-item"><div class="l">Gesamtbudget</div><div class="v num"${b.budget<0?' style="color:var(--danger)"':''}>${chf(b.budget)}</div><div class="s-sub">${ic('wallet','width:12px;height:12px')}Automatisch aus Ihrem Kontostand</div></div><div class="s-item"><div class="l">Verfügbar</div><div class="v num" style="color:${neg?'var(--danger)':'var(--mint)'}">${chf(b.avail)}</div></div><div class="s-item"><div class="l">Pro Tag verfügbar</div><div class="v num">${neg||b.avail===0?'–':chf(b.perDay)}</div><div class="s-sub">${neg?'Kontostand im Minus':`noch ${daysTxt(b.daysLeft)} bis zum ${nextLong(b.pr)}`}</div></div>
+      sumEl.innerHTML=`${ring(Math.min(100,Math.max(0,b.p)),col,84,8)}<div class="s-item"><div class="l">Ausgegeben</div><div class="v num">${chf(b.spent)}</div></div><div class="s-item"><div class="l">Gesamtbudget</div><div class="v num"${b.budget<0?' style="color:var(--danger)"':''}>${chf(b.budget)}</div><div class="s-sub">${ic('wallet','width:12px;height:12px')}Automatisch aus Ihrem Kontostand</div></div><div class="s-item"><div class="l">Verfügbar</div><div class="v num" style="color:${neg?'var(--danger)':'var(--mint)'}">${chf(b.avail)}</div></div><div class="s-item"><div class="l">Pro Tag verfügbar</div><div class="v num">${neg||b.avail===0?'–':chf(b.perDay)}</div><div class="s-sub">${neg?'Kontostand im Minus':`noch ${daysTxt(b.daysLeft)} ${untilTxt(b.pr)}`}</div></div>
       <div class="s-note">Budget ${b.pr.labelY} · Kontostand vor dem ${(d=>d.getDate()+'. '+MONF[d.getMonth()])(parseD(b.pr.start))} ${chf(b.start)}${b.income?` + Einnahmen ${chf(b.income)}`:''} = Budget ${chf(b.budget)}${neg?' · Ihr Kontostand ist negativ – Ausgaben übersteigen Ihr Guthaben.':''}</div>`}
   }else{
     let tb=0,ts=0;expCats().forEach(k=>{const x=budgetInfo(k);tb+=x.b;ts+=x.spent});
@@ -1598,7 +1606,8 @@ function renderSettings(){
     <div class="card set-sec" style="--i:2"><div class="card-head"><div><div class="card-title">Monatsbudget</div><div class="card-sub">Berechnung und Zeitraum Ihres Budgets</div></div></div>
       <div class="seg-ctl seg-wide" role="group" aria-label="Budget-Modus"><button data-bmode="balance" aria-pressed="${balMode()}">${ic('wallet','width:15px;height:15px')}Kontostand als Budget</button><button data-bmode="cats" aria-pressed="${!balMode()}">${ic('pie','width:15px;height:15px')}Summe der Kategorie-Budgets</button></div>
       <div class="ps-row"><label for="psSel">Budgetzeitraum beginnt am</label><select class="input" id="psSel" data-psel>${Array.from({length:28},(_,i)=>i+1).map(i=>`<option value="${i}"${S.periodStart===i?' selected':''}>${i}.${i===25?' (Taschengeld-Tag)':''}</option>`).join('')}<option value="last"${S.periodStart==='last'?' selected':''}>Letzter Tag des Monats</option></select></div>
-      <p class="set-note ps-info">${ic('calendar','width:15px;height:15px')}<span>Aktueller Zeitraum: <b class="num">${curPeriod().labelY}</b> · noch ${daysTxt(daysLeftIn(curPeriod()))} bis zum ${nextLong(curPeriod())}</span></p>
+      <label class="check-row ws-row"><input type="checkbox" id="wsChk" data-wshift${wShift()?' checked':''}><span><b>Am Wochenende auf Freitag vorziehen</b><small>Fällt der Zahltag auf einen Samstag oder Sonntag, beginnt der Zeitraum am Freitag davor</small></span></label>
+      <p class="set-note ps-info">${ic('calendar','width:15px;height:15px')}<span>Aktueller Zeitraum: <b class="num">${curPeriod().labelY}</b> · noch ${daysTxt(daysLeftIn(curPeriod()))} ${untilTxt(curPeriod())}</span></p>
       <p class="set-note" style="margin:12px 0 0">${ic('info','width:15px;height:15px')}${balMode()?'Ihr Guthaben vor Beginn des Budgetzeitraums plus Einnahmen im Zeitraum (z. B. Taschengeld) ist Ihr Budget. Verfügbar = aktueller Kontostand. Limiten pro Kategorie bleiben optional.':'Das Gesamtbudget ist die Summe der Budgets, die Sie pro Kategorie festlegen.'}</p></div>
     <div class="card set-sec" style="--i:2"><div class="card-head"><div><div class="card-title">Darstellung</div><div class="card-sub">Hell oder dunkel</div></div></div>
       <div class="seg-ctl seg-wide" role="group" aria-label="Farbschema"><button data-theme-set="dark" aria-pressed="${th==='dark'}">${ic('moon','width:15px;height:15px')}Dunkel</button><button data-theme-set="light" aria-pressed="${th==='light'}">${ic('sun','width:15px;height:15px')}Hell</button></div></div>
@@ -1677,7 +1686,7 @@ $('#importInput').addEventListener('change',e=>{const f=e.target.files&&e.target
 $('.modal-backdrop').addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
 function dayCheck(){const old=TODAY;tick();if(old!==TODAY){$('#kpis').dataset.built='';setHeader();buildNav();renderView(current,false)}}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')dayCheck()});setInterval(dayCheck,60000);
-document.addEventListener('change',e=>{const el=e.target;if(!el||!el.matches||!el.matches('[data-psel]'))return;S.periodStart=normPS(el.value);$('#kpis').dataset.built='';refresh();setHeader();toast(`Budgetzeitraum: ${curPeriod().labelY}`)});
+document.addEventListener('change',e=>{const el=e.target;if(!el||!el.matches||!el.matches('[data-psel],[data-wshift]'))return;if(el.matches('[data-wshift]'))S.weekendShift=!!el.checked;else S.periodStart=normPS(el.value);$('#kpis').dataset.built='';refresh();setHeader();toast(`Budgetzeitraum: ${curPeriod().labelY}`)});
 addEventListener('hashchange',()=>{const h=location.hash.slice(1);if(h!==current&&VIEWS.find(v=>v.id===h))go(h)});
 matchMedia('(prefers-color-scheme: light)').addEventListener?.('change',ev=>{let sv=null;try{sv=localStorage.getItem(THEME_KEY)}catch(_){}if(!sv&&!qTheme)setTheme(ev.matches?'light':'dark',false)});
 if(/^https?:$/.test(location.protocol)&&'serviceWorker' in navigator){
